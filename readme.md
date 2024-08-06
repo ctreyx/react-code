@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-06 11:23:37
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-06 13:49:48
+ * @LastEditTime: 2024-08-06 13:52:34
  * @FilePath: \react\readme.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
@@ -23,4 +23,4 @@
 8. pnpm i eslint-config-prettier eslint-plugin-prettier -D -w 在package.json新增命令 "lint": "eslint --ext .ts,.jsx,.tsx --fix --quiet ./packages"
 
 9. pnpm i husky -D -w  ,拦截git命令 
-10.  npx husky install 初始化
+10.  npx husky install 初始化,需要初始化 git init
