@@ -2,15 +2,21 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-07 14:37:57
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-16 11:15:56
+ * @LastEditTime: 2024-08-16 11:27:03
  * @FilePath: \react\packages\react-reconciler\src\beginWork.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 import { IReactElement } from 'shared/ReactTypes';
 import { FiberNode } from './fiber';
 import { processUpdateQueue, UpdateQueue } from './updateQueue';
-import { HostComponent, HostRoot, HostText } from './workTags';
+import {
+	FunctionComponent,
+	HostComponent,
+	HostRoot,
+	HostText
+} from './workTags';
 import { mountChildFibers, reconcileChilFiber } from './childFiber';
+import { renderWithHooks } from './fiberHooks';
 
 /**
  * 递归中，递阶段 ， 不断返回子节点
@@ -26,6 +32,9 @@ export const beginWork = (fiberNode: FiberNode) => {
 		case HostComponent:
 			return updateHostComponent(fiberNode);
 
+		case FunctionComponent:
+			return updateFunctionComponent(fiberNode);
+
 		case HostText: //<div>xx</div>   div下面没有子节点
 			return null;
 		default:
@@ -37,6 +46,14 @@ export const beginWork = (fiberNode: FiberNode) => {
 
 	return fiberNode;
 };
+
+// 函数组件的child，是执行后的结果
+function updateFunctionComponent(wip: FiberNode) {
+	const nextChildren = renderWithHooks(wip);
+	reconcileChildren(wip, nextChildren);
+
+	return wip.child;
+}
 
 function updateHostRoot(wip: FiberNode) {
 	const baseState = wip.memoizedState;

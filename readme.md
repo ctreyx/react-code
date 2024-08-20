@@ -6,6 +6,8 @@ react内部包含3个阶段:
 2. render阶段(beginWork,completeWork)
 3. commit阶段(commitWork)
 
+current是当前真实的fiberNode树，另一颗workingProgress是触发更新后，正在reconciler计算中的树
+
 通过 mono-repo 管理
 
 # 1.初始化
@@ -136,3 +138,47 @@ pnpm i -D -w @rollup/plugin-alias
 5. 打包后，进入dis/node_modules/react和react-dom , 运行 pnpm link --global
 
 6. 进入react项目， 运行 pnpm link react --global 和 pnpm link react-dom --global
+
+# 10.FunctionComponent
+
+基础配置:
+
+1.  beginWork中新增function的判断，updateFunctionComponent --> 就是获得child，但是function的儿子是函数执行返回，所以新创一个函数 renderWithHooks
+
+2.  还需要在completeWork中配置function的判断。
+
+3.  打包后可以渲染函数组件
+
+# 11. 第二种调试，用vite
+
+1. 新创项目 pnpm craete vite
+
+2. 删除内容，只剩下 test-fc 文件作为测试单元，然后创建rollup中vite脚本进行配置 --> 最后配置packages中运行指令
+
+# 12. hooks
+
+问题: 1. hooks怎么知道是mount或update? 2. hooks怎么知道自己是不是嵌套在另一个hooks中? 解决方法:hooks有三套，分别对应mount和update,hooks上下文中。运行到什么阶段执行什么阶段的hooks
+
+hooks数据是内部共享，也就是我们引入hooks是从react包，那么reconcile是如何知道的呢？是通过共享获取
+
+1. react包创建-->currentDispatcher.ts --> 存放dispatcher方法，例如useState等.
+
+2. 我们需要中转hooks在react和reconcile的解耦，所以存放在shared中。
+
+3. react和react-dom打包会存在两个internals，所以需要再react-dom打包中排除react的包。 --> 前往打包中排除 external
+
+4. 我们需要记录当前正在执行的fiberNode，拿到hooks,所以需要再fiberHooks.ts 中定义 currentlyRenderingFiber
+
+5. renderWithHooks 函数中，我们需要通过 wip.alternate 是初次渲染还是update,构建不同的hook链表。
+
+# 13.mountUseState
+
+这部作用就是创建hook链表，然后在更新的时候触发链表更新
+
+1. 会首先更改 currentDispatcher.current 内存共享的current指向mount时期的hook链表.
+
+2. 调用useState的时候 mountState ，会创建hook , 然后获取初始值 , 然后给当前 hook 创建一个更新链表 queue.
+
+3. dispatch方法 就是 dispatchSetState.bind 绑定 fiber 和 更新队列 和 action ，等触发的时候 执行 -- > 然后触发 scheduleUpdateOnFiber 进行视图更新
+
+# 14. react测试用例

@@ -1,11 +1,3 @@
-/*
- * @Author: fumi 330696896@qq.com
- * @Date: 2024-08-06 15:43:38
- * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-15 10:29:15
- * @FilePath: \react\scripts\rollup\utils.js
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
 
 import path from 'path';
 import fs from 'fs';
@@ -21,7 +13,7 @@ const distPath = path.resolve(__dirname, '../../dist/node_modules'); //产物路
  * @param isDist 是否是产物
  * @returns
  */
-export function resolvePkgPath(pkgName, isDist) {
+export function resolvePkgPath(pkgName, isDist=false) {
     if (isDist) {
         return `${distPath}/${pkgName}`;
     }
