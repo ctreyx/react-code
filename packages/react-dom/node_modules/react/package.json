@@ -1,7 +1,7 @@
 {
 	"name": "react",
 	"version": "1.0.0",
-	"description": "react公共方法",
+	"description": "React主模块",
 	"dependencies": {
 		"shared": "workspace:*"
 	},

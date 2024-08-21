@@ -15,7 +15,12 @@ import {
 	HostRoot,
 	HostText
 } from './workTags';
-import { NoFlags } from './fiberFlags';
+
+import { NoFlags, Update } from './fiberFlags';
+
+function markUpdate(fiber: FiberNode) {
+	fiber.flags |= Update;
+}
 
 export const completeWork = (wip: FiberNode) => {
 	const newProps = wip.pendingProps; //当前状态
@@ -40,7 +45,12 @@ export const completeWork = (wip: FiberNode) => {
 		// 单纯的文本节点
 		case HostText:
 			if (current !== null && wip.stateNode) {
-				// update
+				// update阶段，如果内容不同进行标记
+				const oldText = current.memoizedProps.content;
+				const newText = newProps.content;
+				if (oldText !== newText) {
+					markUpdate(wip);
+				}
 			} else {
 				// 1.构建离屏dom
 				const instance = appendTextInstance(newProps.content);

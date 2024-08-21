@@ -182,3 +182,66 @@ hooks数据是内部共享，也就是我们引入hooks是从react包，那么re
 3. dispatch方法 就是 dispatchSetState.bind 绑定 fiber 和 更新队列 和 action ，等触发的时候 执行 -- > 然后触发 scheduleUpdateOnFiber 进行视图更新
 
 # 14. react测试用例
+
+跳过
+
+1. 到react-dom创建test-utils文件进行测试，然后因为是测试包，我们希望单独引入react和react-dom包
+
+2. 配置scripts，在react-dom下打包配置react-test-utils,并且排除react和reactDom包
+
+3. 安装测试环境包 pnpm i -D -w jest jest-config jest-environment-jsdom
+
+4. 然后在script/jest/jest.config.js 测试配置
+
+5. 在react/src 创建 **test** 测试用例 ,并且复制用力
+
+6. pnpm test会报错，因为不支持jsx,所以需要转移
+   pnpm i -D -w @babel/core @babel/preset-env @babel/plugin-transform-react-jsx
+
+# 15. setState update 更新阶段
+
+beginWork需要处理: 1.childDeletion 2.节点移动
+
+compeleWork ## 标记阶段 ##: 1.处理hostText内容更新 2.处理hostComponent属性变化
+
+commitWork:1. 对于childDeletion，遍历删除的子树
+
+useState: 1. 实现update阶段的链表
+
+beginWork流程:
+
+1. 现阶段处理单一节点，需要处理 singleElement , singeTextNode. 比较流程需要判断是否可以复用current fiber
+
+2. ChildReconciler 方法中， reconcileSingleElement 和 reconcileSingleTextNode 函数通过判断type key 决定是否复用fiber,不然进行删除标记 --> 创建 deleteChild函数进行删除标记 --> 并且给 reconcileChildrenFibers 添加删除的兜底情况
+
+3. completeWork 函数中，判断HostText的新旧content是否相同，然后进行标记更新. HostComponent的原理一样，只不过HostComponent属性较多这么不写
+
+commitWork流程:
+
+1. commitMutationEffectsOnFiber 中 进行update操作。
+
+2. 在hostConfig中新增 commitUpdate
+
+3. 通过获取fiber身上的content,更新在实例上。
+
+4. ChildDeletion 删除，创建 commitDeletion
+
+commitDeletion : 比较复杂，需要根据子树判断:
+
+1. 对于fc组件，需要解绑useEffect unmount执行，解绑ref
+2. 对于hostComponent,解绑ref
+3. 对于子树的根hostComponent,移除dom
+
+所以是一个递归 , 比如 div下面很多子，需要删除，或者是App，不能删除App，需要往下找根节点
+
+4. commitNestedComponent根据不同tag进行处理。
+
+updateState流程:
+
+1. 新建 HooksDispatcherOnUpdate , updateState 中 updateWorkInProgressHook 实现计算最新数据，那么问题:1.hook数据哪里来 2.交互阶段触发的更新
+
+#对比 mountWorkInProgressHook， mountWorkInProgressHook只需要新建链表即可#
+
+2. updateWorkInProgressHook返回当前的hook --> 通过定义 currentHook 判断，第一次进入没有currentHook ， 所以需要获取状态,通过 currentlyRenderingFiber.alternate 获取上次的hook链表 memoizedState --> 然后 newHook保存上次的状态
+
+然后通过计算，可以获取最新的值，更新在hook上。

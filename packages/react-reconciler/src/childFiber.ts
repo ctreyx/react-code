@@ -2,15 +2,19 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-08 17:34:57
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-15 17:42:50
+ * @LastEditTime: 2024-08-20 17:44:02
  * @FilePath: \react\packages\react-reconciler\src\childFiber.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
-import { IReactElement } from 'shared/ReactTypes';
-import { createFiberFromElement, FiberNode } from './fiber';
+import { IReactElement, Props } from 'shared/ReactTypes';
+import {
+	createFiberFromElement,
+	createWorkInProgress,
+	FiberNode
+} from './fiber';
 import { REACT_ELEMENT_TYPE } from 'shared/ReactSymbols';
 import { HostText } from './workTags';
-import { Placement } from './fiberFlags';
+import { ChildDeletion, Placement } from './fiberFlags';
 
 /**
  * ChildReconciler 是为 父fiber 返回一个 子fiber
@@ -20,12 +24,64 @@ import { Placement } from './fiberFlags';
  * @returns
  */
 function ChildReconciler(showldTrackEffects: boolean) {
+	function deleteChild(returnFiber: FiberNode, childToDelete: FiberNode) {
+		if (!showldTrackEffects) {
+			return;
+		}
+		// 父亲fiber需要删除的子fiber集合
+		const deletions = returnFiber.deletions;
+		if (deletions === null) {
+			returnFiber.deletions = [childToDelete];
+			returnFiber.flags |= ChildDeletion;
+		} else {
+			deletions.push(childToDelete);
+		}
+	}
+
+	function useFiber(fiber: FiberNode, pendingProps: Props): FiberNode {
+		/**
+		 * 克隆fiber, createWorkInProgress 会获取wip的alternate缓存fiber
+		 */
+		const clone = createWorkInProgress(fiber, pendingProps);
+		clone.index = 0;
+		clone.sibling = null;
+		return clone;
+	}
+
 	// 处理单元素，创造一个fiber
 	function reconcileSingleElement(
 		returnFiber: FiberNode,
 		currentFiber: FiberNode | null,
 		element: IReactElement
 	) {
+		// 更新阶段,判断currentFiber和element, type,key是否相同复用
+		const key = element.key;
+		work: if (currentFiber !== null) {
+			if (currentFiber.key === key) {
+				if (element.$$typeof === REACT_ELEMENT_TYPE) {
+					if (currentFiber.type === element.type) {
+						// 复用
+
+						const existing = useFiber(currentFiber, element.props);
+						existing.return = returnFiber;
+						return existing;
+					} else {
+						// key相同，type不同  删除
+						deleteChild(returnFiber, currentFiber);
+						break work;
+					}
+				} else {
+					if (_DEV_) {
+						console.log('还未实现的react类型');
+						break work;
+					}
+				}
+			} else {
+				// 1.key 不相同就删除旧的
+				deleteChild(returnFiber, currentFiber);
+			}
+		}
+
 		const fiber = createFiberFromElement(element);
 		fiber.return = returnFiber; //父节点
 		return fiber;
@@ -37,6 +93,17 @@ function ChildReconciler(showldTrackEffects: boolean) {
 		currentFiber: FiberNode | null,
 		content: string | number
 	) {
+		// 更新阶段 tag相同 更新content
+		if (currentFiber !== null) {
+			if (currentFiber.tag === HostText) {
+				const existing = useFiber(currentFiber, { content });
+				existing.return = returnFiber;
+				return existing;
+			}
+			// 如果tag变了，删掉 , 然后创建新的hostText
+			deleteChild(returnFiber, currentFiber);
+		}
+
 		const fiber = new FiberNode(HostText, { content }, null);
 		fiber.return = returnFiber;
 		return fiber;
@@ -68,7 +135,7 @@ function ChildReconciler(showldTrackEffects: boolean) {
 				default:
 					if (_DEV_) {
 						console.error(`Unknown node type --- ChildReconciler`);
-					} 
+					}
 					break;
 			}
 		}
@@ -81,6 +148,11 @@ function ChildReconciler(showldTrackEffects: boolean) {
 				newChild
 			);
 			return placeSingleChild(fiber);
+		}
+
+		// 兜底情况删除
+		if (currentFiber) {
+			deleteChild(returnFiber, currentFiber);
 		}
 
 		if (_DEV_) {
