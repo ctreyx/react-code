@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-16 11:24:55
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-21 16:03:57
+ * @LastEditTime: 2024-08-22 09:48:01
  * @FilePath: \react\packages\react-reconciler\src\fiberHooks.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -114,6 +114,9 @@ function mountState<State>(
 	const queue = createUpdateQueue<State>();
 	hook.updateQueue = queue;
 
+	// 给当前hook赋值memoizedState
+	hook.memoizedState = memoizedState;
+
 	//@ts-ignore
 	const dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue);
 
@@ -146,9 +149,10 @@ function updateWorkInProgressHook(): Hook {
 
 	if (currentHook === null) {
 		// 这是FC updat第一个hook,需要获取hook状态
-		console.log('currentlyRenderingFiber', currentlyRenderingFiber);
 
 		const current = currentlyRenderingFiber?.alternate;
+		console.log('current', current);
+
 		if (current !== null) {
 			nextCurrentHook = current!.memoizedState;
 		} else {
@@ -187,7 +191,7 @@ function updateWorkInProgressHook(): Hook {
 			currentlyRenderingFiber.memoizedState = workInProgressHook;
 		}
 	} else {
-		// mount时后续的hook
+		// 后续的hook
 		workInProgressHook.next = newHook;
 		workInProgressHook = newHook;
 	}
