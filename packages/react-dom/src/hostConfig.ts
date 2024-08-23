@@ -1,11 +1,13 @@
 import { FiberNode } from 'react-reconciler/src/fiber';
 import { HostText } from 'react-reconciler/src/workTags';
+import { Props } from 'shared/ReactTypes';
+import { DOMElement, updateFiberProps } from './SyntheticEvent';
 
 /*
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-14 17:36:02
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-21 10:30:06
+ * @LastEditTime: 2024-08-23 10:15:17
  * @FilePath: \react\packages\react-dom\src\hostConfig.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -15,10 +17,13 @@ export type TextInstance = Text; //文本实例
 
 // 创建实例
 // export const createInstance = (type: string, props: any) => {
-export const createInstance = (type: string) => {
+export const createInstance = (type: string, props:Props) => {
 	// 通过type创建实例
-	const element = document.createElement(type);
-	return element;
+	const element = document.createElement(type) as unknown;
+
+	updateFiberProps(element as DOMElement, props);
+
+	return element as DOMElement;
 };
 
 export const appendInitialChild = (

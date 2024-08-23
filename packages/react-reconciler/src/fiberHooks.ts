@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-16 11:24:55
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-22 09:48:01
+ * @LastEditTime: 2024-08-22 09:58:37
  * @FilePath: \react\packages\react-reconciler\src\fiberHooks.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -77,7 +77,7 @@ function updateState<State>(): [State, Dispatch<State>] {
 	// 1.找到当前useState的hook数据
 	const hook = updateWorkInProgressHook();
 
-	console.log('hook', hook);
+ 
 
 	// 2.实现updateState中计算新的state
 	const queue = hook.updateQueue as UpdateQueue<State>;
@@ -223,5 +223,5 @@ function mountWorkInProgressHook(): Hook {
 		workInProgressHook = hook;
 	}
 
-	return workInProgressHook;
+	return workInProgressHook; 
 }

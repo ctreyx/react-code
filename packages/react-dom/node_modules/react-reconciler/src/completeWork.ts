@@ -17,6 +17,7 @@ import {
 } from './workTags';
 
 import { NoFlags, Update } from './fiberFlags';
+import { updateFiberProps } from 'react-dom/src/SyntheticEvent';
 
 function markUpdate(fiber: FiberNode) {
 	fiber.flags |= Update;
@@ -30,11 +31,12 @@ export const completeWork = (wip: FiberNode) => {
 		// dom原生的这些节点, 如: div, span, p 标签这种
 		case HostComponent:
 			if (current !== null && wip.stateNode) {
-				// update
+				// update 更新阶段，可以判断props className等变化，打上update flag,这里简单处理
+				updateFiberProps(wip.stateNode, newProps);
 			} else {
 				// 1.构建离屏dom
 				// const instance = createInstance(wip.type, newProps);
-				const instance = createInstance(wip.type);
+				const instance = createInstance(wip.type, newProps);
 
 				// 2.插入dom树
 				appendAllChildren(instance, wip);

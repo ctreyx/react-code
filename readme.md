@@ -245,3 +245,21 @@ updateState流程:
 2. updateWorkInProgressHook返回当前的hook --> 通过定义 currentHook 判断，第一次进入没有currentHook ， 所以需要获取状态,通过 currentlyRenderingFiber.alternate 获取上次的hook链表 memoizedState --> 然后 newHook保存上次的状态
 
 然后通过计算，可以获取最新的值，更新在hook上。
+
+# 总结hooks
+
+在mount绑定链表的时候， workInProgressHook 绑定第一个hook,并且通过 currentlyRenderingFiber 给当前的fiber memoizedState绑定第一个hook. 在后续的hook调用中，通过 ## workInProgressHook.next绑定下一个hook ，构成链表结构 ##. 例如 useState,给当前hook绑定初始值，然后创建queue更新链表，赋值 memoizedState 保存状态。
+
+在update得时候，dispatchSetState --> 获取action构成更新动作，插入到 updateQueue 中。 -- > updateWorkInProgressHook 获取fiber.alternate老的状态身上 memoizedState , 在第二个hook调用，获取上次hook.next拿到第二个hook .
+
+# 16. react 事件系统
+
+1. react事件在completeWork创建dom的时候，绑定 --> 在react-dom下创建 SyntheticEvent.ts --> updateFiberProps 函数为dom绑定props
+
+2. 然后再 createInstance 的时候调用。
+
+3. completeWork update阶段更新props
+
+4. 创建 initEvent 函数，初始化事件，在container进行事件监听 --> dispatchEvent 获得事件源进行事件捕获和冒泡收集事件，然后创建合成事件
+
+5. createSyntheticEvent 合成事件就是将原始事件 stopPropagation 替换 成我们的事件，最后进行处理 triggerEventFlow
