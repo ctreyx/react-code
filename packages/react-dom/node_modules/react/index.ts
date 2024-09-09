@@ -7,7 +7,7 @@ import currentDispatcher, {
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-06 14:07:24
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-21 15:26:00
+ * @LastEditTime: 2024-09-06 15:53:28
  * @FilePath: \react\packages\react\index.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -15,6 +15,11 @@ import currentDispatcher, {
 export const useState: Dispatcher['useState'] = (initialState) => {
 	const dispatcher = resolveDispatcher();
 	return dispatcher.useState(initialState);
+};
+
+export const useEffect: Dispatcher['useEffect'] = (create, deps) => {
+	const dispatcher = resolveDispatcher();
+	return dispatcher.useEffect(create, deps);
 };
 
 // 内部数据共享

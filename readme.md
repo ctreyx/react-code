@@ -263,3 +263,142 @@ updateState流程:
 4. 创建 initEvent 函数，初始化事件，在container进行事件监听 --> dispatchEvent 获得事件源进行事件捕获和冒泡收集事件，然后创建合成事件
 
 5. createSyntheticEvent 合成事件就是将原始事件 stopPropagation 替换 成我们的事件，最后进行处理 triggerEventFlow
+
+6. 最后在 createRoot 注册事件
+
+# 17.多节点diff
+
+当前仅支持单一节点，比如type变化或者key变化
+
+1. 改造之前的单一节点方法, 在childFiber 改动 reconcileSingleElement ,reconcileSingleTextNode 。
+
+2. 多节点流程: 1.将current中同级fiber保存在map中2.遍历newChild,对于每个遍历的element,存在两种情况:a.存在对应current fiber,且可以服用 b.不存在或者不能服用3.判断是插入还是移动4.最后map中剩下的标记删除
+
+3. reconcileChildrenArray --> 1.将current中同级fiber保存在map中 , current是fiber,通过sibing找兄弟，newChild是reactElement ，定义 existingChildren ,将currentChild遍历存储
+
+--> 2. 遍历newChild , a.存在对应current fiber, 且可以服用 b.不存在或者不能服用 .
+
+--> updateFromMap 函数，对比新老child,判断 type和key是否一致，一致复用，删除map中，不一致的创建新的fiber，然后不删除map,最好将map中剩余的全部删除。
+
+--> 最后定义 lastPlacedIndex ,lastNewFiber,firstNewFiber, 通过判断 lastPlacedIndex ，判断新节点是否需要移动. 通过不断标记lastPlacedIndex, 得到前两个节点index大于last, 后面的a1是小于的，说明有移动
+
+4. commit 插入操作
+   --> commitPlacement 函数进行插入
+   --> getHostSibling 找到位移节点, 先向下查找，先找兄弟，比如是hostText或者hostComponent，如果没有兄弟，就向上找，直到找到兄弟节点
+   --> insertOrAppendPlacementNodeIntoContainer 传入before相对位置，进行插入。
+
+总结: reconcileChildrenFibers 中 判断是不是多节点, reconcileChildrenArray 函数中通过 map映射表判断新老节点是否有位移，然后打上flags. 最后commitPlacement找到位移节点，进行位移。
+
+将兜底删除 改为 deleteRemainingChildren
+
+# 18. fragment
+
+1. reconcileChildrenFibers --> 判断是不是fragement,然后直接取其儿子（这是第一种情况，fragment包裹子
+
+2. reconcileSingleElement 判断 REACT_FRAGMENT_TYPE -->在下面创建fiber的时候判断type
+
+3. updateFromMap 中也需要判断fragment , 最后数组改为直接当fragment
+
+4. beginWork中新增fragment判断
+
+5. completework 中 新增判断
+
+6. 删除情况也需要优化 commitDeletion
+
+7. jsx 导出 Fragment ， jsx-dev-runtime 导出
+
+总结 : fragment就是没有节点，需要返回他的children进行渲染。
+
+# 19.批处理
+
+我们当前实现的流程都是同步，且多次操作会多次更新，所以需要进行批处理优化。
+
+vue react都是在微任务前进行批量更新，但是包裹 startTransition 后，react是微任务后红任务前更新。
+
+1. 批处理就是同时触发多个setstate,比如点击事件连续触发setstate，但是以前的 enqueueUpdate 是直接覆盖，我们需要构造链表.
+
+# pending 永远是最后一个，pending.next又永远是第一个 顺序是固定
+
+# 20.lane模型
+
+<!-- 1.实现lane,每个更新都要优先级  -->
+
+# 为什么lane可以实现不同事件级别的优先级？因为 processUpdateQueue 是链表更新，每个update都绑定了lane,每次render会执行最高等级的lane,在processUpdateQueue的时候会判断lane是否是当前执行的lane，这样就可以执行优先级更高的lane
+
+1. 新创建fiberLanes.ts, lane作为update的优先级,lanes作为lane的集合. lane的产生对于不同情况触发的更新，会产生lane,为后续不同事件产生的优先级做准备.
+
+2. dispatchSetState 中创建 lane，传入 craeteUpdate中. 需要在update中放入优先级. --> updateContainer 也需要更新
+
+3. 我们需要知道那些lane被消费，还剩那些lane --> 在 fiberRootNode 新增字段。
+
+<!-- 2.能够合并一个红任务/微任务触发的更新 -->
+<!-- 3.需要一套算法，用于决定那个优先级进入render阶段 -->
+
+总结： 在 scheduleUpdateOnFiber 中，之前都是 renderRoot 进行同步吊度，现在新增lane,走 ensureRootIsScheduled . 然后 ensureRootIsScheduled 中判断lane是不是同步，创建 scheduleSyncCallback执行同步队列方法，将触发更新放入 syncQueue 队列中，最后通过 scheduleMicroTask 微任务方法进行调用。 所以常规是微任务执行更新。
+
+1. 我们现在更新都是在 scheduleUpdateOnFiber 触发，所以需要传入lane
+
+2. scheduleUpdateOnFiber函数中，需要给root标记 pendingLanes ,记录在fiberRoot中。
+
+3. 之前是直接进入 renderRoot ， 现在进入 ensureRootIsScheduled ，通过lane决定优先级。
+   这也是之前为什么普通是微任务， startTransition 是宏任务调度，就在于此。
+
+4. syncTaskQueue.ts 文件编写同步任务调度方法
+
+5. hostConfig中写 微任务调度 ,判断是否支持微任务，不支持通过promise.then模拟，如果promise也不支持就走settimeout宏任务
+
+6. ensureRootIsScheduled 中将 performSyncWorkOnRoot push到同步队列中，然后将 执行同步方法放在微任务中。 --> performSyncWorkOnRoot 需要获取最新的lane判断是不是同步，避免出错。
+
+# 21.render阶段针对lane的改造 (lane为什么可以根据不同优先级更新)
+
+processUpdateQueue 方法消费update的时候需要考虑:1.lane 2.update现在是链表，需要遍历
+
+7. prepareFreshStack 传入当前更新的lane,定义 wipRootRenderLane 保存起来，并且将本次消费的lane绑定在root身上，然后进入workloop阶段. --> beginWork传入 wipRootRenderLane
+
+8. updateFunctionComponent 和 updateHostRoot 传入lane --> processUpdateQueue 传入lane , 需要改造，现在是链表，所以需要do while进行更新值，然后还需要比较 updatelane 与 当前更新的 lane是否一致才更新，这就是为什么lane可以根据不同优先级进行更新的关键。
+
+9. renderWithHooks 需要在文件内定义一个中介 renderLane 保存 renderWithHooks传入的lane,放进 processUpdateQueue
+
+10. commit阶段移除lane , 通过定义 markRootFinished 将root身上的pendinglane移除
+
+11. updateState 中，需要把 queue.shared.pending 清空重置，不然后面更新会缓存上次更新的内容，导致叠加
+
+# 22 useEffect
+
+1. 不同effect副作用可以共用同一个机制，useEffect useLayoutEffect useInsertionEffect. 那么如何区分呢? --> 新增 hookEffectTags.ts 文件，保存不同effect的tag,也是二进制 --> fiberFlags 文件也需要新增一个tag PassiveEffect
+
+2. effect 通过tag Passive,Layout 判断是那个effect . HookHasEffect 标识回调需要执行，所以会给fiberNode 打上 PassiveEffect 的标记。 一般是在执行effect和销毁阶段，打上PassiveEffect标识
+
+3. effect 本身也有next执行下一个effect,所以需要创建 pushEffect 构建effect自身的环状链表.
+
+4. mountEffect 需要将 effect 自身的环状链表存储在 hook.memoizedState 上。
+
+5. 在react/index.ts --> 定义 Dispatcher 和 useEffect
+
+# 23 useEffect的render阶段
+
+commit 阶段需要调用副作用和收集回调，然后commit阶段后执行副作用
+
+1. 安装react的调度器
+   pnpm i -w scheduler
+   pnpm i -D -w @types/scheduler
+
+2. 收集回调，是放在 rootNodeFiber 身上 pendingPassiveEffects.
+
+commitMutationEffectsOnFiber 收集update回调
+commitDeletion 收集unmount回调
+
+3. commit阶段判断有没有effect副作用 --> commitRoot 执行回调
+   --> flushPassiveEffects 执行effect ， 需要先执行unmount,然后执行上次effect执行后收集的destory,最后执行update
+
+4. renderWithHooks重置effect链表
+
+上面都是mountEffect的流程
+
+1. updateEffect --> 通过获取之前状态的effect deps 进行对比，如果相等 则不打上 HookHasEffect 的标记，避免后面更新.
+
+2. commitMutationEffects 这个函数需要 新增 PassiveMark 的判断条件，不然无法遍历.
+
+(nextEffect.subtreeFlags & (MutationMask | PassiveMark)) !== NoFlags
+
+# 24 测试用例

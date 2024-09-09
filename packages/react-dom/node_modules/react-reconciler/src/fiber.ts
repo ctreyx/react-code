@@ -2,14 +2,21 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-07 11:38:52
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-20 17:22:49
+ * @LastEditTime: 2024-09-07 14:24:20
  * @FilePath: \react\packages\react-reconciler\src\fiber.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 import { IReactElement, Key, Props, Ref } from 'shared/ReactTypes';
-import { FunctionComponent, HostComponent, WorkTag } from './workTags';
+import {
+	Fragment,
+	FunctionComponent,
+	HostComponent,
+	WorkTag
+} from './workTags';
 import { Flags, NoFlags } from './fiberFlags';
 import { Container } from 'hostConfig';
+import { Lane, Lanes, NoLane, NoLanes } from './fiberLanes';
+import { Effect } from './fiberHooks';
 
 export class FiberNode {
 	tag: WorkTag;
@@ -33,7 +40,7 @@ export class FiberNode {
 	deletions: FiberNode[] | null;
 	constructor(tag: WorkTag, pendingProps: Props, key: Key) {
 		this.tag = tag; //实例
-		this.key = key;
+		this.key = key || null;
 		this.stateNode = null; // 实例化后的实例对象,<div></div>
 		this.type = null; // 组件类型,如Function
 
@@ -55,19 +62,39 @@ export class FiberNode {
 		this.flags = NoFlags;
 		this.subtreeFlags = NoFlags;
 
-		this.deletions=null
+		this.deletions = null;
 	}
 }
 
+export interface PendingPassiveEffects {
+	unmount: Effect[];
+	update: Effect[];
+}
 export class FiberRootNode {
 	container: Container;
 	current: FiberNode;
 	finishedWork: FiberNode | null;
+
+	// lanes
+	pendingLanes: Lanes;
+	finishedLane: Lane;
+
+	// effect
+	pendingPassiveEffects: PendingPassiveEffects;
+
 	constructor(container: Container, hostRootFiber: FiberNode) {
 		this.container = container;
 		this.current = hostRootFiber;
 		hostRootFiber.stateNode = this;
 		this.finishedWork = null;
+		// lanes
+		this.pendingLanes = NoLanes;
+		this.finishedLane = NoLane;
+
+		this.pendingPassiveEffects = {
+			unmount: [],
+			update: []
+		}
 	}
 }
 
@@ -92,7 +119,7 @@ export const createWorkInProgress = (
 		wip.flags = NoFlags; // 清空副作用
 		wip.subtreeFlags = NoFlags;
 
-				wip.deletions = null;
+		wip.deletions = null;
 	}
 
 	wip.type = current.type; // 组件类型,如Function
@@ -120,5 +147,10 @@ export function createFiberFromElement(element: IReactElement) {
 	const fiber = new FiberNode(fiberTag, props, key);
 	fiber.type = type;
 
+	return fiber;
+}
+
+export function createFiberFromFragment(elements: any, key: Key): FiberNode {
+	const fiber = new FiberNode(Fragment, elements, key);
 	return fiber;
 }
