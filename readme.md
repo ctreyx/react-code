@@ -401,4 +401,83 @@ commitDeletion 收集unmount回调
 
 (nextEffect.subtreeFlags & (MutationMask | PassiveMark)) !== NoFlags
 
-# 24 测试用例
+# 24 测试用例 跳过
+
+1. react-reconciler 创建test . 然后复制一遍 react-dom ,改名 react-noop-renderer, 只保留 src index package ,然后改名package 和index --> 合成事件删除
+
+# 25. 并发更新
+
+问题: 同步更新，渲染组件过多或者单个组件渲染复杂，造成卡顿.
+解决: 以前是同步，现在改成优先级 ， 1.优先级，越小优先级越高 2.饥饿问题，一直没有执行优先级会越来越高 3.时间切片 。 react有5种优先级 同步优先，低优先级，空闲优先级,立即执行优先级
+
+工作过程仅有一个work.
+
+<!-- 交互部份产生优先级 -->
+
+//空闲优先级
+unstable_IdlePriority as IdlePriority,
+//低优先级
+unstable_LowPriority as LowPriority,
+//用户阻塞优先级
+unstable_UserBlockingPriority as UserBlockingPriority,
+//普通优先级
+unstable_NormalPriority as NormalPriority,
+//立刻执行的优先级
+unstable_ImmediatePriority as ImmediatePrity,
+// 当某一个preform正在被调度，但是还没被执行时，可以使用该函数进行取消
+unstable_cancelCallback as cancelCallback,
+// 用于调度preform方法
+unstable_scheduleCallback as scheduleCallback,
+// 当前帧是否用尽了, 用尽了为true，此时需要中断任务
+unstable_shouldYield as shouldYield,
+// 返回当前正在调度的任务
+unstable_getFirstCallbackNode as getFirstCallbackNode,
+
+1. 不同事件附有不同的优先级,需要更新合成事件 --> eventTypeToSchdulerPriority 赋予每个事件优先级 --> triggerEventFlow 赋予优先级 会产生全局上下文优先级，所以在更新的时候 --> requestUpdateLanes 拿到优先级
+
+2. 调度器的优先级和lane的优先级不同，需要转换。 requestUpdateLanes --> 需要获取调度器优先级转为lane
+
+<!-- 扩展调度阶段 -->
+
+将render阶段变为可以中断。
+
+1. ensureRootIsScheduled 宏任务将lane转为schedulerPriority --> 同步任务是通过 performSyncWorkOnRoot 触发更新，宏任务需要创建 performConcurrentWorkOnRoot 并发更新.
+
+2. 新创建 renderRoot 函数，可以判断是否是同步或切片可中断，将之前的workloop改为 workLoopSync 和 workLoopConcurrent . 这样根据同步和切片不同render.
+
+3. performSyncWorkOnRoot 是同步， performConcurrentWorkOnRoot 是可以中断. fiberrootnode新增两个参数 callbackNode callbackPriority.
+
+4. ensureRootIsScheduled 会获取当前的lane和root存在的之前调度 --> 如果当前root不需要更新lane,则取消之前存在的调度. --> 如果现在和之前的lane一致，则不管 --> 不相同有更高级的任务，先取消之前existingCallback 然后创建新的 newCallbackNode --> 最后存储在root身上.
+
+5. performConcurrentWorkOnRoot 需要执行完 所有的 effect,可能effect存在更改优先级，那就终止当前
+
+6. prepareFreshStack 初始化root.finishedLane = NoLane; root.finishedWork = null;
+
+# 26 并发更新的状态计算
+
+我们需要对比 1.优先级是否足够 ,lane数值大小对比不灵活 2.如何兼顾update的连续性和优先级?
+
+1. processUpdateQueue 过去只有简单的同步更新，现在需要新增优先级对比.
+
+2. update的连续性和优先级是指可能中间有个优先级高的，导致最后的结果不一致。
+   所以新增 baseQueue, baseState是本次更新参与计算的初始state 和 memoizedState 字段是上次更新计算的最终state.
+
+就是 u1 u2 u3 ,u2优先级低没有参与，导致结果有误。 过程 u2被跳过，会将u2放进 baseQueue 中，然后将跳过的后面所有都放进 baseQueue ，但是依然计算他们结果，只不过将u3等级将为 nolane.
+
+processUpdateQueue 函数改造.
+
+3. updateState 现在改造成可以打断，之前写法造成每次消费pengding后会被清空，我们需要将他存在current中，只要不进入commit阶段，curent和wip不会互换。
+
+# 27. useTransaction
+
+useTransaction的原理很简单，他内部会将transition包裹的callback执行的时候，更改全局 ReactCurrentBatchConfig.transition 状态，在 requestUpdateLanes 获取lane的时候，以前是从 unstable_getCurrentPriorityLevel 上下文获取，现在判断是不是开启transition，从而返回transitionLane
+
+react18默认是同步，我们现在是默认并发更新，需要改为默认同步 --> updateContainer 函数，传入同步更新schduler,requestUpdateLanes 会返回同步更新的lane
+
+1. mountTransition 内部isPending是定义了state，用高优先级更新,返回一个start方法.
+
+2. startTransition ，然后更改 ReactCurrentBatchConfig.transition --> 执行过度函数，改变优先级 ,再还原优先级.
+
+transition会执行两次， 先执行 setPending(true) --> 更改优先级执行callback -->还原优先级
+
+这里 updateState 和 processUpdateQueue 之前写的有问题，要修改

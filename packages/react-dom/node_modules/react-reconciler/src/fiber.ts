@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-07 11:38:52
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-07 14:24:20
+ * @LastEditTime: 2024-09-10 16:01:31
  * @FilePath: \react\packages\react-reconciler\src\fiber.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -17,6 +17,7 @@ import { Flags, NoFlags } from './fiberFlags';
 import { Container } from 'hostConfig';
 import { Lane, Lanes, NoLane, NoLanes } from './fiberLanes';
 import { Effect } from './fiberHooks';
+import { CallbackNode } from 'scheduler';
 
 export class FiberNode {
 	tag: WorkTag;
@@ -82,6 +83,9 @@ export class FiberRootNode {
 	// effect
 	pendingPassiveEffects: PendingPassiveEffects;
 
+	callbackNode: CallbackNode | null;
+	callbackPriority: Lane;
+
 	constructor(container: Container, hostRootFiber: FiberNode) {
 		this.container = container;
 		this.current = hostRootFiber;
@@ -91,10 +95,13 @@ export class FiberRootNode {
 		this.pendingLanes = NoLanes;
 		this.finishedLane = NoLane;
 
+		this.callbackNode = null;
+		this.callbackPriority = NoLane;
+
 		this.pendingPassiveEffects = {
 			unmount: [],
 			update: []
-		}
+		};
 	}
 }
 

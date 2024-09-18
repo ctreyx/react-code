@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-16 11:24:55
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-09 09:41:38
+ * @LastEditTime: 2024-09-18 15:26:04
  * @FilePath: \react\packages\react-reconciler\src\fiberHooks.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -14,6 +14,7 @@ import {
 	createUpdateQueue,
 	enqueueUpdate,
 	processUpdateQueue,
+	Update,
 	UpdateQueue
 } from './updateQueue';
 import { Action } from 'shared/ReactTypes';
@@ -21,6 +22,7 @@ import { scheduleUpdateOnFiber } from './workLoop';
 import { Lane, NoLane, requestUpdateLanes } from './fiberLanes';
 import { Flags, PassiveEffect } from './fiberFlags';
 import { HookHasEffect, Passive } from './hookEffectTags';
+import ReactCurrentBatchConfig from 'react/src/currentBatchConfig';
 
 // 当前正在操作的fiber
 let currentlyRenderingFiber: FiberNode | null = null;
@@ -35,6 +37,8 @@ export interface Hook {
 	memoizedState: any;
 	updateQueue: unknown;
 	next: Hook | null;
+	baseState: any;
+	baseQueue: Update<any> | null;
 }
 
 export interface Effect {
@@ -87,14 +91,53 @@ export function renderWithHooks(wip: FiberNode, Lane: Lane) {
 
 const HooksDispatcherOnMount: Dispatcher = {
 	useState: mountState,
-	useEffect: mountEffect
+	useEffect: mountEffect,
+	useTransition: mountTransition
 };
 
 // 定义update的hooks链表
 const HooksDispatcherOnUpdate: Dispatcher = {
 	useState: updateState,
-	useEffect: updateEffect
+	useEffect: updateEffect,
+	useTransition: updateTransition
 };
+
+//  [ispending,startTransition]=useTransition()  第一个是是否再过度中，第二个是开始过度的函数
+function mountTransition(): [boolean, (callback: () => void) => void] {
+	// .transition内部会设置useState
+	const [isPending, setPending] = mountState(false);
+	// 2.创建hook链表
+	const hook = mountWorkInProgressHook();
+
+	const start = startTransition.bind(null, setPending);
+
+	hook.memoizedState = start;
+
+	return [isPending, start];
+}
+
+function updateTransition(): [boolean, (callback: () => void) => void] {
+	const [isPending] = updateState();
+	const hook = updateWorkInProgressHook();
+	const start = hook.memoizedState;
+	return [isPending as boolean, start];
+}
+
+function startTransition(setPending: Dispatch<boolean>, callback: () => void) {
+	// 1.触发高优先级更新，用useState
+	setPending(true);
+
+	const prevTransition = ReactCurrentBatchConfig.transition; 
+	ReactCurrentBatchConfig.transition = 1;
+
+	// 2.执行过度函数，改变优先级
+
+	callback();
+	setPending(false);
+
+	// 3.还原优先级
+	ReactCurrentBatchConfig.transition = prevTransition;
+}
 
 function updateEffect(create: EffectCallback | void, deps: EffectDeps | void) {
 	const hook = updateWorkInProgressHook();
@@ -117,7 +160,12 @@ function updateEffect(create: EffectCallback | void, deps: EffectDeps | void) {
 
 		// 不相等,需要更新
 		(currentlyRenderingFiber as FiberNode).flags |= PassiveEffect; //打标记
-		hook.memoizedState = pushEffect(Passive | HookHasEffect, create, destory, nextDeps);
+		hook.memoizedState = pushEffect(
+			Passive | HookHasEffect,
+			create,
+			destory,
+			nextDeps
+		);
 	}
 }
 function areHookInputsEqual(a: EffectDeps, b: EffectDeps): boolean {
@@ -199,18 +247,58 @@ function updateState<State>(): [State, Dispatch<State>] {
 
 	// 2.实现updateState中计算新的state
 	const queue = hook.updateQueue as UpdateQueue<State>;
+	const baseState = hook.baseState;
 	const pending = queue.shared.pending; // 存储的更新动作
-	queue.shared.pending = null; //需要置空，不然会一直缓存导致后面更新叠加
+
+	const current = currentHook as Hook;
+	let baseQueue = current.baseQueue;
+
+	// queue.shared.pending = null; //需要置空，不然会一直缓存导致后面更新叠加
 
 	if (pending !== null) {
-		// 计算
-		const { memoizedState } = processUpdateQueue(
-			hook.memoizedState,
-			pending,
-			renderLane
-		);
-		hook.memoizedState = memoizedState;
+		if (baseQueue !== null) {
+			// baseQueue b2->b0->b1->b2
+			// pending p2->p0->p1->p2
+
+			// first=b0
+			const baseFirst = baseQueue.next;
+			// first=p0
+			const pendingFirst = pending.next;
+
+			// b2->p0
+			baseQueue.next = pendingFirst;
+			// p2->b0
+			pending.next = baseFirst;
+			// p2->b0->b1->b2->p0->p1->p2
+		}
+
+		baseQueue = pending;
+		// 保存再current中
+		current.baseQueue = pending;
+		queue.shared.pending = null; //需要置空，不然会一直缓存导致后面更新叠加
+
+
+
+		// // 计算
+		// const { memoizedState } = processUpdateQueue(
+		// 	hook.memoizedState,
+		// 	pending,
+		// 	renderLane
+		// );
+		// hook.memoizedState = memoizedState;
 	}
+
+			if (baseQueue !== null) {
+				// 计算
+				const {
+					memoizedState,
+					baseQueue: newBaseQueue,
+					baseState: newBaseState
+				} = processUpdateQueue(baseState, baseQueue, renderLane);
+				hook.memoizedState = memoizedState;
+				hook.baseQueue = newBaseQueue;
+				hook.baseState = newBaseState;
+			}
 
 	return [hook.memoizedState, queue.dispatch as Dispatch<State>];
 }
@@ -239,6 +327,7 @@ function mountState<State>(
 
 	// 给当前hook赋值memoizedState
 	hook.memoizedState = memoizedState;
+	hook.baseState = memoizedState;
 
 	//@ts-ignore
 	const dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue);
@@ -276,7 +365,7 @@ function updateWorkInProgressHook(): Hook {
 		// 这是FC updat第一个hook,需要获取hook状态
 
 		const current = currentlyRenderingFiber?.alternate;
-		console.log('current', current);
+ 
 
 		if (current !== null) {
 			nextCurrentHook = current!.memoizedState;
@@ -301,7 +390,9 @@ function updateWorkInProgressHook(): Hook {
 	const newHook: Hook = {
 		memoizedState: currentHook?.memoizedState,
 		updateQueue: currentHook.updateQueue,
-		next: null
+		next: null,
+		baseQueue: currentHook.baseQueue,
+		baseState: currentHook.baseState
 	};
 
 	if (workInProgressHook === null) {
@@ -328,7 +419,9 @@ function mountWorkInProgressHook(): Hook {
 	const hook: Hook = {
 		memoizedState: null,
 		updateQueue: null,
-		next: null
+		next: null,
+		baseQueue: null,
+		baseState: null
 	};
 
 	if (workInProgressHook === null) {

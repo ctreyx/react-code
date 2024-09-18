@@ -2,13 +2,13 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-08 14:24:31
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-05 15:24:04
+ * @LastEditTime: 2024-09-11 17:17:19
  * @FilePath: \react\packages\react-reconciler\src\updateQueue.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 import { Dispatch } from 'react/src/currentDispatcher';
 import { Action } from 'shared/ReactTypes';
-import { Lane } from './fiberLanes';
+import { isSubsetOfLanes, Lane, NoLane } from './fiberLanes';
 
 export interface Update<State> {
 	action: Action<State>; //动作，可以是直接传入新值，或者接受函数返回新值
@@ -68,38 +68,88 @@ export const processUpdateQueue = <State>(
 	baseState: State,
 	pendingUpdate: Update<State> | null,
 	renderLane: Lane
-): { memoizedState: State } => {
+): {
+	memoizedState: State;
+	baseState: State;
+	baseQueue: Update<State> | null;
+} => {
 	const result: ReturnType<typeof processUpdateQueue<State>> = {
-		memoizedState: baseState
+		memoizedState: baseState,
+		baseState,
+		baseQueue: null
 	};
+
 
 	if (pendingUpdate != null) {
 		// 取出第一个update
 		const first = pendingUpdate.next;
 		let pending = pendingUpdate.next;
 
+		let newBaseQueueFirst: Update<State> | null = null; //头
+		let newBaseQueueLast: Update<State> | null = null; //尾
+
+		let newBaseState = baseState;
+		let newState = baseState; //每次都会更新
+
+	let num = 0;
+
+
 		do {
 			const updateLane = pending.lane;
 			// 只有update和当前renderlane一直才可以渲染
-			if (updateLane === renderLane) {
+			// if (updateLane === renderLane) {
+
+			if (!isSubsetOfLanes(updateLane, renderLane)) {
+				// 优先级不够，代表跳过
+				const clone = createUpdate(pending.action, pending.lane);
+
+				// 第一个被跳过的
+				if (newBaseQueueFirst === null) {
+					newBaseQueueFirst = clone;
+					newBaseQueueLast = clone;
+					newBaseState = newState;
+				} else {
+					// 后续跳过
+					newBaseQueueLast!.next = clone;
+					newBaseQueueLast = clone;
+				}
+			} else {
+				// 优先级足够，继续执行
+
+				// 判断之前有没有跳过的？
+				if (newBaseQueueLast !== null) {
+					const clone = createUpdate(pending.action, NoLane);
+					newBaseQueueLast!.next = clone;
+					newBaseQueueLast = clone;
+				}
+
 				const action = pendingUpdate.action;
 				if (action instanceof Function) {
 					// 函数,接受老值返回新
-					baseState = action(baseState);
+					newState = action(baseState);
 				} else {
 					// 就是直接值，直接赋值
-					baseState = action;
+					newState = action;
 				}
 				pending = pending.next;
-			} else {
-				if (_DEV_) {
-					console.log(`跳过优先级${updateLane}的更新报错`);
-				}
 			}
-		} while (pending !== first);
+		} while (pending !== first && num++ <10);
+
+		if (newBaseQueueLast === null) {
+			// 没有被跳过的
+			newBaseState = newState;
+		} else {
+			// 有跳过，构成链表
+			newBaseQueueLast.next = newBaseQueueFirst;
+		}
+
+		// 改造
+		result.memoizedState = newState;
+		result.baseState = newBaseState;
+		result.baseQueue = newBaseQueueLast; //环状链表
 	}
 	// while重复修改值，所以这里需要不断修改baseState
-	result.memoizedState = baseState;
+	// result.memoizedState = baseState;
 
 	// 改造前
 	// if (pendingUpdate != null) {

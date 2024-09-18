@@ -7,6 +7,7 @@
 		"lint": "eslint --ext .js,.ts,.jsx,.tsx --fix --quiet ./packages",
 		"build:dev": "rimraf dist && rollup --bundleConfigAsCjs --config scripts/rollup/dev.config.js",
 		"demo": "vite serve react-vite/test-fc --config scripts/vite/vite.config.mts --force",
+		"demos": "vite serve react-vite/schduler --config scripts/vite/vite.config.mts --force",
 		"test": "jest --config scripts/jest/jest.config.js"
 	},
 	"keywords": [],
