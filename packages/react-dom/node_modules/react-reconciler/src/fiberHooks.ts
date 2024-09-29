@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-16 11:24:55
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-18 15:26:04
+ * @LastEditTime: 2024-09-29 15:44:44
  * @FilePath: \react\packages\react-reconciler\src\fiberHooks.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -17,12 +17,20 @@ import {
 	Update,
 	UpdateQueue
 } from './updateQueue';
-import { Action } from 'shared/ReactTypes';
+import { Action, ReactContext, Thenable, Usable } from 'shared/ReactTypes';
 import { scheduleUpdateOnFiber } from './workLoop';
-import { Lane, NoLane, requestUpdateLanes } from './fiberLanes';
+import {
+	Lane,
+	mergeLanes,
+	NoLane,
+	removeLanes,
+	requestUpdateLanes
+} from './fiberLanes';
 import { Flags, PassiveEffect } from './fiberFlags';
 import { HookHasEffect, Passive } from './hookEffectTags';
 import ReactCurrentBatchConfig from 'react/src/currentBatchConfig';
+import { REACT_CONTEXT_TYPE } from 'shared/ReactSymbols';
+import { markWipReceivedUpdate } from './beginWork';
 
 // 当前正在操作的fiber
 let currentlyRenderingFiber: FiberNode | null = null;
@@ -92,15 +100,54 @@ export function renderWithHooks(wip: FiberNode, Lane: Lane) {
 const HooksDispatcherOnMount: Dispatcher = {
 	useState: mountState,
 	useEffect: mountEffect,
-	useTransition: mountTransition
+	useTransition: mountTransition,
+	useRef: mountRef,
+	useContext: readContext
 };
 
 // 定义update的hooks链表
 const HooksDispatcherOnUpdate: Dispatcher = {
 	useState: updateState,
 	useEffect: updateEffect,
-	useTransition: updateTransition
+	useTransition: updateTransition,
+	useRef: updateRef,
+	useContext: readContext
 };
+
+function use<T>(usable: Usable<T>): T {
+	if (usable !== null && typeof usable === 'object') {
+		if (typeof (usable as Thenable<T>).then === 'function') {
+			// Thenable 异步
+		} else if ((usable as ReactContext<T>).$$typeof === REACT_CONTEXT_TYPE) {
+			// context
+			const context = usable as ReactContext<T>;
+
+			return readContext(context);
+		}
+	}
+
+	throw new Error('不支持的use参数');
+}
+
+function readContext<T>(context: ReactContext<T>): T {
+	const consumer = currentlyRenderingFiber;
+	if (consumer === null) {
+		throw new Error('只能在函数组件中调用useContext');
+	}
+	const value = context._currentValue;
+	return value;
+}
+
+function mountRef<T>(initialValue: T): { current: T } {
+	const hook = mountWorkInProgressHook();
+	const ref = { current: initialValue };
+	hook.memoizedState = ref;
+	return ref;
+}
+function updateRef<T>(initialValue: T): { current: T } {
+	const hook = updateWorkInProgressHook();
+	return hook.memoizedState;
+}
 
 //  [ispending,startTransition]=useTransition()  第一个是是否再过度中，第二个是开始过度的函数
 function mountTransition(): [boolean, (callback: () => void) => void] {
@@ -127,7 +174,7 @@ function startTransition(setPending: Dispatch<boolean>, callback: () => void) {
 	// 1.触发高优先级更新，用useState
 	setPending(true);
 
-	const prevTransition = ReactCurrentBatchConfig.transition; 
+	const prevTransition = ReactCurrentBatchConfig.transition;
 	ReactCurrentBatchConfig.transition = 1;
 
 	// 2.执行过度函数，改变优先级
@@ -277,8 +324,6 @@ function updateState<State>(): [State, Dispatch<State>] {
 		current.baseQueue = pending;
 		queue.shared.pending = null; //需要置空，不然会一直缓存导致后面更新叠加
 
-
-
 		// // 计算
 		// const { memoizedState } = processUpdateQueue(
 		// 	hook.memoizedState,
@@ -288,17 +333,31 @@ function updateState<State>(): [State, Dispatch<State>] {
 		// hook.memoizedState = memoizedState;
 	}
 
-			if (baseQueue !== null) {
-				// 计算
-				const {
-					memoizedState,
-					baseQueue: newBaseQueue,
-					baseState: newBaseState
-				} = processUpdateQueue(baseState, baseQueue, renderLane);
-				hook.memoizedState = memoizedState;
-				hook.baseQueue = newBaseQueue;
-				hook.baseState = newBaseState;
-			}
+	if (baseQueue !== null) {
+		// bailout
+		const prevState = hook.memoizedState;
+
+		// 计算
+		const {
+			memoizedState,
+			baseQueue: newBaseQueue,
+			baseState: newBaseState
+		} = processUpdateQueue(baseState, baseQueue, renderLane, (update) => {
+			const skippedLane = update.lane;
+			const fiber = currentlyRenderingFiber as FiberNode;
+
+			fiber.lanes = mergeLanes(fiber.lanes, skippedLane);
+		});
+
+		if (!Object.is(prevState, memoizedState)) {
+			// 不一致表示没有命中
+			markWipReceivedUpdate();
+		}
+
+		hook.memoizedState = memoizedState;
+		hook.baseQueue = newBaseQueue;
+		hook.baseState = newBaseState;
+	}
 
 	return [hook.memoizedState, queue.dispatch as Dispatch<State>];
 }
@@ -353,7 +412,7 @@ function dispatchSetState<State>(
 	 * dispatch: ƒ ()
 	 * shared: pending: {action: 11}
 	 */
-	enqueueUpdate(updateQueue, update); // 将更新动作插入到链表中
+	enqueueUpdate(updateQueue, update, fiber, lane); // 将更新动作插入到链表中
 
 	scheduleUpdateOnFiber(fiber, lane); //触发更新
 }
@@ -365,7 +424,6 @@ function updateWorkInProgressHook(): Hook {
 		// 这是FC updat第一个hook,需要获取hook状态
 
 		const current = currentlyRenderingFiber?.alternate;
- 
 
 		if (current !== null) {
 			nextCurrentHook = current!.memoizedState;
@@ -442,4 +500,13 @@ function mountWorkInProgressHook(): Hook {
 	}
 
 	return workInProgressHook;
+}
+
+export function bailoutHook(wip: FiberNode, renderLane: Lane) {
+	const current = wip.alternate as FiberNode;
+	wip.updateQueue = current.updateQueue;
+	wip.flags &= ~PassiveEffect;
+
+	// 命中bailout后，这个fiber还存在lane需要执行，所以需要移除
+	current.lanes = removeLanes(current.lanes, renderLane);
 }

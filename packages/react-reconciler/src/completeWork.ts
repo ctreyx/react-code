@@ -10,18 +10,27 @@ import {
 } from 'hostConfig';
 import { FiberNode } from './fiber';
 import {
+	ContextProvider,
 	Fragment,
 	FunctionComponent,
 	HostComponent,
 	HostRoot,
-	HostText
+	HostText,
+	OffscreenComponent,
+	SuspenseComponent
 } from './workTags';
 
-import { NoFlags, Update } from './fiberFlags';
+import { NoFlags, Ref, Update, Visibility } from './fiberFlags';
 import { updateFiberProps } from 'react-dom/src/SyntheticEvent';
+import { popProvider } from './fiberContext';
+import { mergeLanes, NoLanes } from './fiberLanes';
 
 function markUpdate(fiber: FiberNode) {
 	fiber.flags |= Update;
+}
+
+function markRef(fiber: FiberNode) {
+	fiber.flags |= Ref;
 }
 
 export const completeWork = (wip: FiberNode) => {
@@ -34,6 +43,11 @@ export const completeWork = (wip: FiberNode) => {
 			if (current !== null && wip.stateNode) {
 				// update 更新阶段，可以判断props className等变化，打上update flag,这里简单处理
 				updateFiberProps(wip.stateNode, newProps);
+
+				// 标记ref,
+				if (current.ref !== wip.ref) {
+					markRef(wip);
+				}
 			} else {
 				// 1.构建离屏dom
 				// const instance = createInstance(wip.type, newProps);
@@ -42,6 +56,11 @@ export const completeWork = (wip: FiberNode) => {
 				// 2.插入dom树
 				appendAllChildren(instance, wip);
 				wip.stateNode = instance;
+
+				// 标记ref,mount的时候只要存在ref就标记
+				if (wip.ref !== null) {
+					markRef(wip);
+				}
 			}
 			bubbleProperties(wip);
 			return null;
@@ -72,9 +91,41 @@ export const completeWork = (wip: FiberNode) => {
 
 			return null;
 
+		case OffscreenComponent:
+			bubbleProperties(wip);
+
+			return null;
+
+		case SuspenseComponent:
+			const offscreenFiber = wip.child as FiberNode;
+			const isHidden = offscreenFiber.pendingProps.mode === 'hidden';
+			const currentOffsceenFiber = offscreenFiber.alternate;
+
+			if (currentOffsceenFiber !== null) {
+				// update
+				const wasHidden = currentOffsceenFiber.pendingProps.mode === 'hidden';
+				if (isHidden !== wasHidden) {
+					// 展示
+					offscreenFiber.flags |= Visibility;
+					bubbleProperties(offscreenFiber);
+				}
+			} else if (isHidden) {
+				// mount
+				offscreenFiber.flags |= Visibility;
+				bubbleProperties(offscreenFiber);
+			}
+			bubbleProperties(wip);
+			return null;
+
 		case Fragment:
 			bubbleProperties(wip);
 
+			return null;
+
+		case ContextProvider:
+			const context = wip.type._context;
+			popProvider(context);
+			bubbleProperties(wip);
 			return null;
 
 		default:
@@ -127,14 +178,21 @@ function appendAllChildren(parent: Container, wip: FiberNode): void {
 function bubbleProperties(wip: FiberNode) {
 	let subtreeFlags = NoFlags;
 	let child = wip.child;
+	let newChildLanes = NoLanes;
 
 	while (child !== null) {
 		subtreeFlags |= child.subtreeFlags; //收集儿子子节点的副作用
 		subtreeFlags |= child.flags; //收集儿子的状态
+
+		newChildLanes = mergeLanes(
+			newChildLanes,
+			mergeLanes(child.lanes, child.childLanes)
+		);
 
 		child.return = wip;
 		child = child.sibling;
 	}
 
 	wip.subtreeFlags |= subtreeFlags;
+	wip.childLanes = newChildLanes;
 }

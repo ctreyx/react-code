@@ -481,3 +481,102 @@ react18默认是同步，我们现在是默认并发更新，需要改为默认�
 transition会执行两次， 先执行 setPending(true) --> 更改优先级执行callback -->还原优先级
 
 这里 updateState 和 processUpdateQueue 之前写的有问题，要修改
+
+# 28. useRef
+
+useRef原理就是将原生元素hostcomponent div 之类的实例丢入ref.current
+
+1. fiberFlags定义Ref和LayoutMask --> ReactTypes 定义Ref
+
+2. fiberHooks 中定义 mountRef ,很简单就是将initialValue保存到hook.memoizedState即可
+
+# 需要标记ref,mount时存在ref和update时ref发生变化,分别在beginWork和completeWork中。
+
+3. 在 beginwork 文件中创建 markRef 函数标记Ref , updateHostComponent 中调用。
+
+4. completework中也创建markRef,在 HostComponent 中，mount和update都判断标记
+
+# 执行ref绑定操作
+
+分别在mutation和layout阶段,所以在 commitWork封装commitEffects 函数，定义mutation和layout阶段。
+
+5. layout阶段是绑定新ref,mutation是解绑。 commitLayoutEffectsOnFiber 和 commitMutationEffectsOnFiber
+
+6. 组件卸载解绑ref --> commitNestedComponent
+
+7. commitRoot 之前只有mutation阶段，现在新增layout阶段
+
+8. 补充细节,fiber.ts中，createFiberFromElement新增ref
+
+# 29.useContext
+
+1. 创建context --> react/context.ts新增 createContext 函数
+
+# 30.suspense
+
+通过包裹子孙组件，如果祖孙组件在加载状态，渲染fallback状态。 实现流程：如果是通过移除child或fallback，会导致状态无法保存的问题且消耗性能，所以react是采取display:none，通过offscreen显隐child，如果是loading状态，则渲染child的sibling fallback.所以fallback是child的兄弟。 这样susbpense就只有一颗子树，。
+
+原理:实际上，每次都会渲染 child和fallback,只不过会根据 hideOrUnhideAllChildren 传入的hide标识，判断给不给child display:none
+
+1. reactsymbols和worktags新增类型 --> fiber新增createFiberFromElement --> suspense类型。 --> react/index.ts导出 REACT_SUSPENSE_TYPE as Suspense
+
+2. beginWork 判断 SuspenseComponent 组件 --> 需要判断当前是不是suspend挂起状态，如果是，则渲染fallback. --> 这里存在mount时期渲染child和fallback , update时期渲染child和fallback的4种状态。
+
+3. 我们需要构建wip.child指向 offscreen 指向child,然后 offscreen sibling 指向fragment ,fragment儿子是fallback .我们需要构建这样的树
+
+4. 工作流程: completework时需要处理4种状态，需要对比offscreen的mode状态进行切换。 --> 这里进行判断 offscreen.mode状态，然后打上flags标记。 --> commitwork处理flags, commitMutationEffectsOnFiber --> hideOrUnhideAllChildren 会根据当前mode状态，渲染实例
+
+5. 触发流程: 存在初次渲染会渲染两次，首先进入正常child --> 遇到 use挂起状态-->渲染fallback --> 渲染正常child ,所以我们需要除了beginwork和completework外，新增一个unwind(往上遍历祖辈)流程.
+
+todo: use
+
+# 31.use
+
+use可以接受thenable和reactcontext
+
+# 32.性能优化
+
+bailout策略:
+
+1. 将 变化和不变化分离，比如state props context是变化的，命中性能优化的组件可以不通过reconcile生成wip.child，而是直接服用上次更新生成的wip.child ! 注意，是命中性能优化组件的子组件（而不是他本身）不需要render
+
+比如，没有优化前，父组件包含state和setstate的<button /> ,然后还有另一个不需要更改的组件，这样每次更新都会导致不需要更改的组件render一次。 那我们就可以提取需要更改state的组件，再放在父组件，这样每次更新父组件和不需要更改的组件都不会render,只有state更改的组件才会render.
+
+第二种，如果不需要更改的组件包裹在需要更改的组件，比如 <div>{{num}}
+<Component /> </div> ,无法像第一种抽离，那么我们将他整个抽离成组件，通过插槽方式渲染 <Component /> ,这样也不会重复render
+
+2. react 内部优化
+
+bailout策略:原理，命中的组件可以不通过reconcile生成wip.child,而是直接复用上次更新的wip.child
+
+a. props不变
+b.state不变，不存在update 或 update计算出state没有变化 （比如每次setstate值都一样，那么就不会render）
+c.context不变
+d.type不变
+
+eagerState策略:不必要更新，没有必要开启后续调度,比如setstate值都一样
+
+1. 在beginWork中，我们每次会通过reconcile生成组件的child,然后在这里需要命中bailout策略。
+
+--> 我们首先判断组件有没有state,没有状态表示不需要更新或者state没有变，所以我通过lanes判断有没有更新。
+
+1. 到fiber中新增lanes和childLanes字段。 --> dispatchSetState 函数中 ，产生lanes， enqueueUpdate 修改传入fiber和lane --> beginwork中将fiber.lanes=nolanes
+
+2. processUpdateQueue 跳过的话，需要新增一个 onSkipUpdate 回调 --> updateState的时候需要调用
+
+3. childLanes 和 subtreeflags类似，一样在bubbleProrerties中冒泡。
+
+4. markUpdateFromFiberToRoot 中每次触发更新，都要冒泡到parent.childLanes
+
+具体实现:
+
+1. 创建 didReceiveUpdate 是否命中bailout策略，false代表命中. beginWork 中会对比四要素，判断是否命中 。 checkScheduledUpdateOrContext 函数是判断本次更新的lane和wip.lanes是否一样，如果一样说明和上次更新一样就命中。
+
+2. 如果命中， bailouOnAlreadyFinishedWork 会 clone wip,复用不需要进入reconcile. 还会判断他的子树需要更新不，如果也命中，直接return null ,向上遍历跳过向下循环。
+
+3. 如果四要素没有命中，还有机会检验，就是 updateHostRoot 会检验两次的state是否一致，如果一致直接 bailouOnAlreadyFinishedWork
+
+4. updateFunctionComponent 中，会在fiberhooks中判断state是否更改更改 didReceiveUpdate , 如果一致，进入 bailouOnAlreadyFinishedWork 跳过render. 并且执行bailoutHook重置他身上的updateQueue,flags,lanes
+
+
+总结： fibernode身上新增lanes和childLanes , 收集他需要更新的动作。然后等到下次更新的实话，拿到当前展示的alternate,对比现在展示的动作和本次更新的动作是否一致，如果一致则跳过。 --> 如果4要素没有命中，在 updateHostRoot  和 updateFunctionComponent 中对比state是否更新，判断命中与否。

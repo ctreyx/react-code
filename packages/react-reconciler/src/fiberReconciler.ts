@@ -45,7 +45,9 @@ export function updateContainer(
 
 		enqueueUpdate(
 			hostRootFiber.updateQueue as UpdateQueue<IReactElement | null>,
-			update
+			update,
+			hostRootFiber,
+			lane
 		);
 
 		scheduleUpdateOnFiber(hostRootFiber, lane);

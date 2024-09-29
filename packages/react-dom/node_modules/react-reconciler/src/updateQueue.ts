@@ -2,13 +2,14 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-08 14:24:31
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-11 17:17:19
+ * @LastEditTime: 2024-09-29 10:35:46
  * @FilePath: \react\packages\react-reconciler\src\updateQueue.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 import { Dispatch } from 'react/src/currentDispatcher';
 import { Action } from 'shared/ReactTypes';
-import { isSubsetOfLanes, Lane, NoLane } from './fiberLanes';
+import { isSubsetOfLanes, Lane, mergeLanes, NoLane } from './fiberLanes';
+import { FiberNode } from './fiber';
 
 export interface Update<State> {
 	action: Action<State>; //动作，可以是直接传入新值，或者接受函数返回新值
@@ -46,7 +47,9 @@ export const createUpdateQueue = <State>() => {
 //往链表插入
 export const enqueueUpdate = <State>(
 	updateQueue: UpdateQueue<State>,
-	update: Update<State>
+	update: Update<State>,
+	fiber: FiberNode,
+	lane: Lane
 ) => {
 	const pending = updateQueue.shared.pending;
 
@@ -60,6 +63,12 @@ export const enqueueUpdate = <State>(
 		pending.next = update;
 	}
 
+	fiber.lanes = mergeLanes(fiber.lanes, lane);
+	const alternate = fiber.alternate;
+	if (alternate !== null) {
+		alternate.lanes = mergeLanes(alternate.lanes, lane);
+	}
+
 	updateQueue.shared.pending = update;
 };
 
@@ -67,7 +76,8 @@ export const enqueueUpdate = <State>(
 export const processUpdateQueue = <State>(
 	baseState: State,
 	pendingUpdate: Update<State> | null,
-	renderLane: Lane
+	renderLane: Lane,
+	onSkipUpdate?: <State>(update: Update<State>) => void
 ): {
 	memoizedState: State;
 	baseState: State;
@@ -78,7 +88,6 @@ export const processUpdateQueue = <State>(
 		baseState,
 		baseQueue: null
 	};
-
 
 	if (pendingUpdate != null) {
 		// 取出第一个update
@@ -91,8 +100,7 @@ export const processUpdateQueue = <State>(
 		let newBaseState = baseState;
 		let newState = baseState; //每次都会更新
 
-	let num = 0;
-
+		let num = 0;
 
 		do {
 			const updateLane = pending.lane;
@@ -102,6 +110,8 @@ export const processUpdateQueue = <State>(
 			if (!isSubsetOfLanes(updateLane, renderLane)) {
 				// 优先级不够，代表跳过
 				const clone = createUpdate(pending.action, pending.lane);
+
+				onSkipUpdate?.(clone);
 
 				// 第一个被跳过的
 				if (newBaseQueueFirst === null) {
@@ -133,7 +143,7 @@ export const processUpdateQueue = <State>(
 				}
 				pending = pending.next;
 			}
-		} while (pending !== first && num++ <10);
+		} while (pending !== first && num++ < 10);
 
 		if (newBaseQueueLast === null) {
 			// 没有被跳过的

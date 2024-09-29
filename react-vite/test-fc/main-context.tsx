@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-16 14:04:45
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-29 14:33:14
+ * @LastEditTime: 2024-09-20 11:42:40
  * @FilePath: \react\react-vite\test-fc\main.tsx
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -16,22 +16,28 @@ import React, {
 } from 'react';
 import ReactDOM from 'react-dom/client';
 
+const ctxA = createContext('deafult A');
+const ctxB = createContext('default B');
 function App() {
-	const [num, setNum] = useState(0);
-
-	console.log('app num', num);
-	
-
-	return <div onClick={() => {
-		setNum(1)
-	}}>
-		<Cpn />
-	</div>
+	return (
+		<ctxA.Provider value={'A0'}>
+			<ctxB.Provider value={'B0'}>
+				<ctxA.Provider value={'A1'}>
+					<Cpn />
+				</ctxA.Provider>
+			</ctxB.Provider>
+			<Cpn />
+		</ctxA.Provider>
+	);
 }
 function Cpn() {
-	console.log('Cpn render');
-
-	return <div>Cpn</div>;
+	const a = useContext(ctxA);
+	const b = useContext(ctxB);
+	return (
+		<div>
+			A: {a} B: {b}
+		</div>
+	);
 }
 const root = document.querySelector('#root') as Element;
 

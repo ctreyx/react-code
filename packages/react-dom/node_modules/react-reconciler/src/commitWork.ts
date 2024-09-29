@@ -2,71 +2,159 @@ import {
 	appendChildToContainer,
 	commitUpdate,
 	Container,
+	hideInstance,
+	hideTextInstance,
 	insertChildTocontainer,
 	Instance,
-	removeChild
+	removeChild,
+	unhideInstance,
+	unhideTextInstance
 } from 'hostConfig';
 import { FiberNode, FiberRootNode, PendingPassiveEffects } from './fiber';
 import {
 	ChildDeletion,
 	Flags,
+	LayoutMask,
 	MutationMask,
 	NoFlags,
 	PassiveEffect,
 	PassiveMark,
 	Placement,
-	Update
+	Ref,
+	Update,
+	Visibility
 } from './fiberFlags';
 import {
 	FunctionComponent,
 	HostComponent,
 	HostRoot,
-	HostText
+	HostText,
+	OffscreenComponent
 } from './workTags';
 import { Effect, FCUpdateQueue } from './fiberHooks';
 import { HookHasEffect } from './hookEffectTags';
 
+const commitEffects = (
+	phrase: 'mutation' | 'layout',
+	mask: Flags,
+	callback: (FiberNode: FiberNode, root: FiberRootNode) => void
+) => {
+	return (finishedWork: FiberNode, root: FiberRootNode) => {
+		nextEffect = finishedWork;
+
+		while (nextEffect !== null) {
+			// 向下遍历
+			const child: FiberNode | null = nextEffect.child;
+
+			//如果存在子节点，则继续向下遍历
+			if ((nextEffect.subtreeFlags & mask) !== NoFlags && child !== null) {
+				nextEffect = child;
+			} else {
+				// 可能不存在subtreeFlags或没有子节点,向上遍历
+
+				up: while (nextEffect !== null) {
+					callback(nextEffect, root);
+
+					const sibling: FiberNode | null = nextEffect.sibling;
+
+					if (sibling !== null) {
+						nextEffect = sibling;
+						break up;
+					}
+
+					nextEffect = nextEffect.return;
+				}
+			}
+		}
+	};
+};
+
+export const commitMutationEffects = commitEffects(
+	'mutation',
+	MutationMask | PassiveMark,
+	commitMutationEffectsOnFiber
+);
+
+export const commitLayoutEffects = commitEffects(
+	'layout',
+	LayoutMask,
+	commitLayoutEffectsOnFiber
+);
+
 let nextEffect: FiberNode | null = null;
-export const commitMutationEffects = (
+// export const commitMutationEffects = (
+// 	finishedWork: FiberNode,
+// 	root: FiberRootNode
+// ) => {
+// 	nextEffect = finishedWork;
+
+// 	while (nextEffect !== null) {
+// 		// 向下遍历
+// 		const child: FiberNode | null = nextEffect.child;
+
+// 		//如果存在子节点，则继续向下遍历
+// 		if (
+// 			(nextEffect.subtreeFlags & (MutationMask | PassiveMark)) !== NoFlags &&
+// 			child !== null
+// 		) {
+// 			nextEffect = child;
+// 		} else {
+// 			// 可能不存在subtreeFlags或没有子节点,向上遍历
+
+// 			up: while (nextEffect !== null) {
+// 				commitMutationEffectsOnFiber(nextEffect, root);
+
+// 				const sibling: FiberNode | null = nextEffect.sibling;
+
+// 				if (sibling !== null) {
+// 					nextEffect = sibling;
+// 					break up;
+// 				}
+
+// 				nextEffect = nextEffect.return;
+// 			}
+// 		}
+// 	}
+// };
+
+function commitLayoutEffectsOnFiber(
 	finishedWork: FiberNode,
 	root: FiberRootNode
-) => {
-	nextEffect = finishedWork;
+) {
+	const flags = finishedWork.flags;
+	const tag = finishedWork.tag;
 
-	while (nextEffect !== null) {
-		// 向下遍历
-		const child: FiberNode | null = nextEffect.child;
+	if (_DEV_) {
+		console.log('commitLayoutEffectsOnFiber', finishedWork);
+	}
 
-		//如果存在子节点，则继续向下遍历
-		if (
-			(nextEffect.subtreeFlags & (MutationMask | PassiveMark)) !== NoFlags &&
-			child !== null
-		) {
-			nextEffect = child;
-		} else {
-			// 可能不存在subtreeFlags或没有子节点,向上遍历
+	// layout阶段是绑定新的ref
+	if ((flags & Ref) !== NoFlags && tag === HostComponent) {
+		debugger;
+		safelyAttachRef(finishedWork);
+		finishedWork.flags &= ~Ref;
+	}
 
-			up: while (nextEffect !== null) {
-				commitMutationEffectsOnFiber(nextEffect, root);
-
-				const sibling: FiberNode | null = nextEffect.sibling;
-
-				if (sibling !== null) {
-					nextEffect = sibling;
-					break up;
-				}
-
-				nextEffect = nextEffect.return;
+	function safelyAttachRef(fiber: FiberNode) {
+		const ref = fiber.ref;
+		if (ref !== null) {
+			// 判断是函数类型
+			const instance = fiber.stateNode;
+			if (typeof ref === 'function') {
+				ref(instance);
+			} else {
+				ref.current = instance;
 			}
 		}
 	}
-};
+}
 
-const commitMutationEffectsOnFiber = (
+function commitMutationEffectsOnFiber(
 	finishedWork: FiberNode,
 	root: FiberRootNode
-) => {
+) {
 	const flags = finishedWork.flags;
+	const tag = finishedWork.tag;
 
 	if (_DEV_) {
 		console.log('commitMutationEffectsOnFiber', finishedWork);
@@ -102,7 +190,103 @@ const commitMutationEffectsOnFiber = (
 		commitPassiveEffect(finishedWork, root, 'update');
 		finishedWork.flags &= ~PassiveEffect; // 标记位清除
 	}
-};
+
+	// mutation阶段是解绑
+	if ((flags & Ref) !== NoFlags && tag === HostComponent) {
+		safelyDetachRef(finishedWork);
+	}
+
+	// suspense
+	if ((flags & Visibility) !== NoFlags && tag === OffscreenComponent) {
+		const isHidden = finishedWork.pendingProps.mode === 'hidden';
+		hideOrUnhideAllChildren(finishedWork, isHidden);
+		finishedWork.flags &= ~Visibility; // 标记位清除
+	}
+}
+
+function hideOrUnhideAllChildren(finishedWork: FiberNode, isHidden: boolean) {
+	findHostSubtreeRoot(finishedWork, (hostRoot) => {
+		const instance = hostRoot.stateNode;
+
+		if (hostRoot.tag === HostComponent) {
+			isHidden ? hideInstance(instance) : unhideInstance(instance);
+		} else if (hostRoot.tag === HostText) {
+			isHidden
+				? hideTextInstance(instance)
+				: unhideTextInstance(instance, hostRoot.memoizedProps.content + '');
+		}
+	});
+}
+
+function findHostSubtreeRoot(
+	finishedWork: FiberNode,
+	callback: (subtree: FiberNode) => void
+) {
+	let node = finishedWork;
+	let hostSubtreeRoot = null; //顶层
+
+	while (true) {
+		if (node.tag === HostComponent) {
+			if (hostSubtreeRoot === null) {
+				hostSubtreeRoot = node;
+				callback(node);
+			}
+		} else if (node.tag === HostText) {
+			// HostText 没有子孙，就是最底层
+			if (hostSubtreeRoot === null) {
+				callback(node);
+			}
+		} else if (
+			node.tag === OffscreenComponent &&
+			node.pendingProps.mode === 'hidden' &&
+			node !== finishedWork
+		) {
+			// 这种是suspense嵌套suspense，我们不管,不便利子孙
+		}
+
+		// 向下
+		else if (node.child !== null) {
+			node.child.return = node;
+			node = node.child;
+			continue;
+		}
+
+		if (node === finishedWork) {
+			return;
+		}
+
+		// 向上
+		while (node.sibling === null) {
+			if (node.return === null || node.return === finishedWork) {
+				return;
+			}
+
+			if (hostSubtreeRoot === node) {
+				hostSubtreeRoot = null;
+			}
+
+			node = node.return;
+		}
+
+		if (hostSubtreeRoot === node) {
+			hostSubtreeRoot = null;
+		}
+
+		node.sibling.return = node;
+		node = node.sibling;
+	}
+}
+
+function safelyDetachRef(current: FiberNode) {
+	const ref = current.ref;
+	if (ref !== null) {
+		if (typeof ref === 'function') {
+			ref(null);
+		} else {
+			ref.current = null;
+		}
+	}
+}
 
 function commitPassiveEffect(
 	fiber: FiberNode,
@@ -201,14 +385,16 @@ function commitDeletion(childToDelete: FiberNode, root: FiberRootNode) {
 		switch (unmountFiber.tag) {
 			case HostComponent:
 				// TODO 解绑ref
+
 				recordHostChildrenToDelete(rootChildenToDelete, unmountFiber);
+
+				safelyDetachRef(unmountFiber);
+
 				return;
 			case HostText:
-				// TODO 解绑ref
 				recordHostChildrenToDelete(rootChildenToDelete, unmountFiber);
 				return;
 			case FunctionComponent:
-				// TODO  解绑ref
 				commitPassiveEffect(unmountFiber, root, 'unmount');
 				return;
 			default:

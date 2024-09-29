@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-08 17:34:57
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-29 15:02:19
+ * @LastEditTime: 2024-09-29 14:54:00
  * @FilePath: \react\packages\react-reconciler\src\childFiber.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -249,26 +249,37 @@ function ChildReconciler(showldTrackEffects: boolean) {
 		return firstNewFiber;
 	}
 
+	function getElementKeyToUse(element: any, index?: number): Key {
+		if (
+			Array.isArray(element) ||
+			typeof element === 'string' ||
+			typeof element === 'number' ||
+			element === undefined ||
+			element === null
+		) {
+			return index;
+		}
+		return element.key !== null ? element.key : index;
+	}
+
 	function updateFromMap(
 		returnFiber: FiberNode,
 		existingChildren: ExistingChildren,
 		index: number,
 		element: any
 	): FiberNode | null {
-		const keyToUse = element.key !== null ? element.key : index;
+		const keyToUse = getElementKeyToUse(element, index);
 		const before = existingChildren.get(keyToUse) || null;
 
-		// 第一种情况，hostText
+		// HostText
 		if (typeof element === 'string' || typeof element === 'number') {
 			if (before) {
 				if (before.tag === HostText) {
-					// 可以复用
 					existingChildren.delete(keyToUse);
 					return useFiber(before, { content: element + '' });
 				}
-				// 不能复用重新创建
-				return new FiberNode(HostText, { content: element + '' }, null);
 			}
+			return new FiberNode(HostText, { content: element + '' }, null);
 		}
 
 		// 第二种 ReactElement
@@ -333,7 +344,6 @@ function ChildReconciler(showldTrackEffects: boolean) {
 				return reconcileChildrenArray(returnFiber, currentFiber, newChild);
 			}
 
-			
 			switch (newChild.$$typeof) {
 				case REACT_ELEMENT_TYPE:
 					const fiber = reconcileSingleElement(
@@ -375,3 +385,24 @@ function ChildReconciler(showldTrackEffects: boolean) {
 
 export const reconcileChilFiber = ChildReconciler(true);
 export const mountChildFibers = ChildReconciler(false);
+
+export function cloneChildFibers(wip: FiberNode) {
+	if (wip.child === null) {
+		return;
+	}
+
+	let currentChild = wip.child;
+	let newChild = createWorkInProgress(currentChild, currentChild.pendingProps);
+
+	wip.child = newChild;
+	newChild.return = wip;
+
+	while (currentChild.sibling !== null) {
+		currentChild = currentChild.sibling;
+		newChild = newChild.sibling = createWorkInProgress(
+			newChild,
+			newChild.pendingProps
+		);
+		newChild.return = wip;
+	}
+}

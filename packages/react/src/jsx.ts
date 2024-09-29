@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-06 14:20:09
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-08-29 15:00:29
+ * @LastEditTime: 2024-09-20 11:20:29
  * @FilePath: \react\packages\react\src\jsx.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -28,8 +28,10 @@ export const ReactElement = function (
 		key,
 		ref,
 		props,
-		_mark: 'tx'
+		_mark: 'tx1'
 	};
+
+ 
 
 	return element;
 };
@@ -84,6 +86,7 @@ export const jsxDEV = (type: ElementType, config: any) => {
 	const props: Props = {};
 	let ref: Ref = null;
 
+ 
 	for (const prop in config) {
 		const val = config[prop];
 
@@ -113,5 +116,4 @@ export function isValidElement(object: any): boolean {
 	);
 }
 
-
-export const Fragment=REACT_FRAGMENT_TYPE
+export const Fragment = REACT_FRAGMENT_TYPE;

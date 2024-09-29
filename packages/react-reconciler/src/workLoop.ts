@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-07 14:39:13
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-10 16:54:04
+ * @LastEditTime: 2024-09-29 10:02:39
  * @FilePath: \react\packages\react-reconciler\src\workLoop.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -12,6 +12,7 @@ import {
 	commitHookEffectListCreate,
 	commitHookEffectListDestroy,
 	commitHookEffectListUnmount,
+	commitLayoutEffects,
 	commitMutationEffects
 } from './commitWork';
 import { completeWork } from './completeWork';
@@ -60,11 +61,17 @@ function prepareFreshStack(root: FiberRootNode, lane: Lane) {
 }
 
 //拿到fiber，找到根
-function markUpdateFromFiberToRoot(fiber: FiberNode) {
+// function markUpdateFromFiberToRoot(fiber: FiberNode) {
+function markUpdateLaneFromFiberToRoot(fiber: FiberNode,lane:Lane) {
 	let node = fiber;
 	let parent = node.return;
 	//如果是普通fiber，会有return  如果是hostFiber，没有return
 	while (parent !== null) {
+		parent.childLanes = mergeLanes(parent.childLanes, lane)
+		const alternate = parent.alternate;
+		if (alternate !== null) {
+		alternate.childLanes = mergeLanes(alternate.childLanes, lane);	
+		}
 		node = parent;
 		parent = node.return;
 	}
@@ -79,7 +86,7 @@ function markUpdateFromFiberToRoot(fiber: FiberNode) {
 
 // 调度功能
 export const scheduleUpdateOnFiber = (fiber: FiberNode, lane: Lane) => {
-	const root = markUpdateFromFiberToRoot(fiber);
+	const root = markUpdateLaneFromFiberToRoot(fiber, lane);
 
 	markRootUpdate(root, lane);
 
@@ -309,6 +316,7 @@ function commitRoot(root: FiberRootNode) {
 		// 2.mutation Placement
 		root.current = finishedWork; //1. fiber树的切换
 		// 3.layout
+		commitLayoutEffects(finishedWork, root);
 	} else {
 		root.current = finishedWork;
 	}
