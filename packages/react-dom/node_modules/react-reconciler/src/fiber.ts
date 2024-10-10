@@ -1,8 +1,8 @@
 /*
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-07 11:38:52
- * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-29 09:24:16
+ * @LastEditors: error: error: git config user.name & please set dead value or install git && error: git config user.email & please set dead value or install git & please set dead value or install git
+ * @LastEditTime: 2024-10-08 10:50:23
  * @FilePath: \react\packages\react-reconciler\src\fiber.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -12,6 +12,7 @@ import {
 	Fragment,
 	FunctionComponent,
 	HostComponent,
+	MemoComponent,
 	OffscreenComponent,
 	SuspenseComponent,
 	WorkTag
@@ -21,7 +22,11 @@ import { Container } from 'hostConfig';
 import { Lane, Lanes, NoLane, NoLanes } from './fiberLanes';
 import { Effect } from './fiberHooks';
 import { CallbackNode } from 'scheduler';
-import { REACT_PROVIDER_TYPE, REACT_SUSPENSE_TYPE } from 'shared/ReactSymbols';
+import {
+	REACT_MEMO_TYPE,
+	REACT_PROVIDER_TYPE,
+	REACT_SUSPENSE_TYPE
+} from 'shared/ReactSymbols';
 
 export interface OffscreenProps {
 	mode: 'visible' | 'hidden';
@@ -153,7 +158,6 @@ export const createWorkInProgress = (
 	wip.lanes = current.lanes;
 	wip.childLanes = current.childLanes;
 
-
 	return wip;
 };
 
@@ -166,11 +170,15 @@ export function createFiberFromElement(element: IReactElement) {
 	if (typeof type === 'string') {
 		// <div></div>
 		fiberTag = HostComponent;
-	} else if (
-		typeof type === 'object' &&
-		type.$$typeof === REACT_PROVIDER_TYPE
-	) {
-		fiberTag = ContextProvider;
+	} else if (typeof type === 'object') {
+		switch (type.$$typeof) {
+			case REACT_PROVIDER_TYPE:
+				fiberTag = ContextProvider;
+				break;
+			case REACT_MEMO_TYPE:
+				fiberTag = MemoComponent;
+				break;
+		}
 	} else if (type.$$typeof === REACT_SUSPENSE_TYPE) {
 		fiberTag = SuspenseComponent;
 	} else if (typeof type !== 'function' && _DEV_) {

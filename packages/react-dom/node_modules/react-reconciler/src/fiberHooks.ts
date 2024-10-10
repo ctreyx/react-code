@@ -1,8 +1,8 @@
 /*
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-16 11:24:55
- * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-29 15:44:44
+ * @LastEditors: error: error: git config user.name & please set dead value or install git && error: git config user.email & please set dead value or install git & please set dead value or install git
+ * @LastEditTime: 2024-10-09 15:58:08
  * @FilePath: \react\packages\react-reconciler\src\fiberHooks.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -10,6 +10,7 @@ import internals from 'shared/internals';
 import { FiberNode } from './fiber';
 import { Dispatch, Dispatcher } from 'react/src/currentDispatcher';
 import {
+	basicStateReducer,
 	createUpdate,
 	createUpdateQueue,
 	enqueueUpdate,
@@ -23,6 +24,7 @@ import {
 	Lane,
 	mergeLanes,
 	NoLane,
+	NoLanes,
 	removeLanes,
 	requestUpdateLanes
 } from './fiberLanes';
@@ -58,12 +60,17 @@ export interface Effect {
 }
 export interface FCUpdateQueue<State> extends UpdateQueue<State> {
 	lastEffect: Effect | null;
+	lastRenderState: State;
 }
 
 type EffectCallback = () => void;
 type EffectDeps = any[] | null;
 
-export function renderWithHooks(wip: FiberNode, Lane: Lane) {
+export function renderWithHooks(
+	wip: FiberNode,
+	Component: FiberNode['type'],
+	Lane: Lane
+) {
 	// 赋值操作
 	currentlyRenderingFiber = wip;
 	// 重置hooks链表
@@ -83,7 +90,7 @@ export function renderWithHooks(wip: FiberNode, Lane: Lane) {
 		currentDispatcher.current = HooksDispatcherOnMount;
 	}
 
-	const Component = wip.type; //函数组件保存在type
+	// const Component = wip.type; //函数组件保存在type
 	const props = wip.pendingProps;
 	const children = Component(props);
 
@@ -102,7 +109,9 @@ const HooksDispatcherOnMount: Dispatcher = {
 	useEffect: mountEffect,
 	useTransition: mountTransition,
 	useRef: mountRef,
-	useContext: readContext
+	useContext: readContext,
+	useMemo: mountMemo,
+	useCallback: mountCallback
 };
 
 // 定义update的hooks链表
@@ -111,7 +120,9 @@ const HooksDispatcherOnUpdate: Dispatcher = {
 	useEffect: updateEffect,
 	useTransition: updateTransition,
 	useRef: updateRef,
-	useContext: readContext
+	useContext: readContext,
+	useMemo: updateMemo,
+	useCallback: updateCallback
 };
 
 function use<T>(usable: Usable<T>): T {
@@ -293,7 +304,7 @@ function updateState<State>(): [State, Dispatch<State>] {
 	const hook = updateWorkInProgressHook();
 
 	// 2.实现updateState中计算新的state
-	const queue = hook.updateQueue as UpdateQueue<State>;
+	const queue = hook.updateQueue as FCUpdateQueue<State>;
 	const baseState = hook.baseState;
 	const pending = queue.shared.pending; // 存储的更新动作
 
@@ -357,6 +368,8 @@ function updateState<State>(): [State, Dispatch<State>] {
 		hook.memoizedState = memoizedState;
 		hook.baseQueue = newBaseQueue;
 		hook.baseState = newBaseState;
+		// eager
+		queue.lastRenderState = memoizedState;
 	}
 
 	return [hook.memoizedState, queue.dispatch as Dispatch<State>];
@@ -381,7 +394,8 @@ function mountState<State>(
 		},
 		dispatch: null
 	 */
-	const queue = createUpdateQueue<State>();
+	// const queue = createUpdateQueue<State>();
+	const queue = createFCUpdateQueue<State>();
 	hook.updateQueue = queue;
 
 	// 给当前hook赋值memoizedState
@@ -392,13 +406,15 @@ function mountState<State>(
 	const dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue);
 
 	queue.dispatch = dispatch;
+	// eager
+	queue.lastRenderState = memoizedState;
 
 	return [memoizedState, dispatch];
 }
 
 function dispatchSetState<State>(
 	fiber: FiberNode,
-	updateQueue: UpdateQueue<State>,
+	updateQueue: FCUpdateQueue<State>,
 	action: Action<State>
 ) {
 	const lane = requestUpdateLanes();
@@ -407,6 +423,32 @@ function dispatchSetState<State>(
 	 * 返回 {action: 11} -->更新的值
 	 */
 	const update = createUpdate(action, lane);
+
+	// eagerState
+	const current = fiber.alternate;
+	if (
+		fiber.lanes === NoLanes &&
+		(current === null || current.lanes === NoLanes)
+	) {
+		// 当前产生得update是这个fiber第一个update
+		// 1.上次更新状态
+		const currentState = updateQueue.lastRenderState;
+		const eagerState = basicStateReducer(currentState, action);
+
+		update.hasEagerState = true;
+		update.eagerState = eagerState;
+
+		if (Object.is(currentState, eagerState)) {
+			enqueueUpdate(updateQueue, update, fiber, NoLane); // 将更新动作插入到链表中
+
+			// 命中
+			if (_DEV_) {
+				console.log('命中eager');
+			}
+
+			return;
+		}
+	}
 
 	/**
 	 * dispatch: ƒ ()
@@ -509,4 +551,51 @@ export function bailoutHook(wip: FiberNode, renderLane: Lane) {
 
 	// 命中bailout后，这个fiber还存在lane需要执行，所以需要移除
 	current.lanes = removeLanes(current.lanes, renderLane);
+}
+
+function mountCallback<T>(callback: T, deps?: any) {
+	const hook = mountWorkInProgressHook();
+	const nextDeps = deps === undefined ? null : deps;
+	hook.memoizedState = [callback, nextDeps];
+	return callback;
+}
+
+function updateCallback<T>(callback: T, deps?: any) {
+	const hook = updateWorkInProgressHook();
+	const nextDeps = deps === undefined ? null : deps;
+	const preState = hook.memoizedState;
+
+	if (nextDeps !== null) {
+		const [preCallback, preDeps] = preState;
+		if (areHookInputsEqual(preDeps, nextDeps)) {
+			return preCallback;
+		}
+	}
+
+	hook.memoizedState = [callback, nextDeps];
+	return callback;
+}
+
+function mountMemo<T>(nextCreate: () => T, deps?: any) {
+	const hook = mountWorkInProgressHook();
+	const nextDeps = deps === undefined ? null : deps;
+	const nextValue = nextCreate();
+	hook.memoizedState = [nextValue, nextDeps];
+	return nextValue;
+}
+function updateMemo<T>(nextCreate: () => T, deps?: any) {
+	const hook = updateWorkInProgressHook();
+	const nextDeps = deps === undefined ? null : deps;
+	const preState = hook.memoizedState;
+
+	if (nextDeps !== null) {
+		const [preMemo, preDeps] = preState;
+		if (areHookInputsEqual(preDeps, nextDeps)) {
+			return preMemo;
+		}
+	}
+
+	const nextValue = nextCreate();
+	hook.memoizedState = [nextValue, nextDeps];
+	return nextValue;
 }

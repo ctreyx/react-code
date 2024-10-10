@@ -578,5 +578,34 @@ eagerState策略:不必要更新，没有必要开启后续调度,比如setstate
 
 4. updateFunctionComponent 中，会在fiberhooks中判断state是否更改更改 didReceiveUpdate , 如果一致，进入 bailouOnAlreadyFinishedWork 跳过render. 并且执行bailoutHook重置他身上的updateQueue,flags,lanes
 
+总结： fibernode身上新增lanes和childLanes , 收集他需要更新的动作。然后等到下次更新的实话，拿到当前展示的alternate,对比现在展示的动作和本次更新的动作是否一致，如果一致则跳过。 --> 如果4要素没有命中，在 updateHostRoot 和 updateFunctionComponent 中对比state是否更新，判断命中与否。
 
-总结： fibernode身上新增lanes和childLanes , 收集他需要更新的动作。然后等到下次更新的实话，拿到当前展示的alternate,对比现在展示的动作和本次更新的动作是否一致，如果一致则跳过。 --> 如果4要素没有命中，在 updateHostRoot  和 updateFunctionComponent 中对比state是否更新，判断命中与否。
+# 33.eagerState
+
+正常流程: 交互-->触发更新-->调度-->render->计算状态 ， eagerState会通过优先计算状态，判断是否走后面调度流程: 交互-->计算状态 -->没有更新不触发调度. 有更新-->触发更新-->调度-->render->计算状态
+
+eagerState需要满足当前fiber没有其他更新，lanes为0得实话才能进入。
+
+1. 在 dispatchSetState 中，判断是否命中eager , 我们需要在 FCUpdateQueue 中新增一个lastRenderState保存上次更新得状态。--> mountState和updateState 中需要保存上次更新得状态。 queue.lastRenderState=memoizedState
+
+2. dispatchSetState通过计算新老状态，如果命中则直接return 不走下面调度 scheduleUpdateOnFiber
+
+# 34.memo
+
+问题：为什么react内部有优化，还是需要优化api？ 比如props，即使每次传入得值是固定不变得，但是还是会更新？ 是因为父组件有更新，无法触发bailout复用，所以每次都会reconciler新的组件出来，导致子组件props都是新的，react内部是通过全等 === 判断新旧props，所以每次都会更新。
+
+1. react/src/memo 创建memo.ts文件，实际上memo就是将函数组件，重新定义为memoComponent,所以这里包裹一下type为REACT_MEMO_TYPE
+
+2. fiber.ts 中 ，createFiberFromElement 创建元素得时候，把包裹得 memocomponent 这里判断，加上fiberTag = MemoComponent
+
+3. beginWork 判断 MemoComponent ,这里进行bailout比较，判断新老props是否一致. 如果不一致，再走updateFunctionComponent重新生成即可。 只不过这里需要改造 updateFunctionComponent ，以前是内部获得component,只不过memo得component在type.type上，需要外部传入。
+
+4. completeWork 这里需要判断 MemoComponent
+
+# 35 useMemo useCallback
+
+useCallback缓存函数，在我们父级定义一个函数变量addOne,传给子级使用，每次子都会更新，是因为每次函数都是render出来浅比较会失败。
+
+很简单，hook定义usememo和usecallback,每次比较deps即可。
+
+useMemo还可以手动bailout，类似于memo,只不过是在父级useMemo(()=><app />,[]),这样缓存函数组件

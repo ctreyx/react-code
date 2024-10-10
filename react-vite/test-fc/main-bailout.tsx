@@ -1,8 +1,8 @@
 /*
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-16 14:04:45
- * @LastEditors: error: error: git config user.name & please set dead value or install git && error: git config user.email & please set dead value or install git & please set dead value or install git
- * @LastEditTime: 2024-10-08 14:04:23
+ * @LastEditors: fumi 330696896@qq.com
+ * @LastEditTime: 2024-09-30 11:32:57
  * @FilePath: \react\react-vite\test-fc\main.tsx
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -12,48 +12,33 @@ import React, {
 	useTransition,
 	useRef,
 	createContext,
-	useContext,
-	memo
+	useContext
 } from 'react';
 import ReactDOM from 'react-dom/client';
 
 function App() {
 	const [num, setNum] = useState(0);
+	const [num1, setNum1] = useState(0);
 
 	console.log('app num', num);
+	console.log('app num1', num1);
 
 	return (
 		<div
 			onClick={() => {
-				setNum(num + 1);
+				setNum(1);
+			setNum1(1);
 			}}
 		>
-			<Cpn num={num} name={'cpn1'} />
-			<Cpn num={1} name={'cpn2'} />
+			<Cpn />
 		</div>
 	);
 }
-// function Cpn({ num, name }) {
-// 	console.log('Cpn render', name);
+function Cpn() {
+	console.log('Cpn render');
 
-// 	return (
-// 		<div>
-// 			{' '}
-// 			{name}:{num}{' '}
-// 		</div>
-// 	);
-// }
-
-const Cpn = memo(function ({ num, name }: any) {
-	console.log('Cpn render', name);
-
-	return (
-		<div>
-			{name}:{num}{' '}
-		</div>
-	);
-});
-
+	return <div>Cpn</div>;
+}
 const root = document.querySelector('#root') as Element;
 
 ReactDOM.createRoot(root).render(<App />);

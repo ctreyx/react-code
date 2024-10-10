@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-08 14:24:31
  * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-29 10:35:46
+ * @LastEditTime: 2024-09-30 11:19:11
  * @FilePath: \react\packages\react-reconciler\src\updateQueue.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -15,6 +15,8 @@ export interface Update<State> {
 	action: Action<State>; //动作，可以是直接传入新值，或者接受函数返回新值
 	lane: Lane; //优先级
 	next: Action<any> | null;
+	hasEagerState: boolean;
+	eagerState: State | null;
 }
 
 export interface UpdateQueue<State> {
@@ -26,12 +28,16 @@ export interface UpdateQueue<State> {
 
 export const createUpdate = <State>(
 	action: Action<State>,
-	lane: Lane
+	lane: Lane,
+	hasEagerState = false,
+	eagerState = null
 ): Update<State> => {
 	return {
 		action,
 		lane,
-		next: null
+		next: null,
+		hasEagerState,
+		eagerState
 	};
 };
 
@@ -43,6 +49,16 @@ export const createUpdateQueue = <State>() => {
 		dispatch: null
 	} as UpdateQueue<State>;
 };
+
+export function basicStateReducer<State>(state: State, action: Action<State>) {
+	if (action instanceof Function) {
+		// 函数,接受老值返回新
+		return action(state);
+	} else {
+		// 就是直接值，直接赋值
+		return action;
+	}
+}
 
 //往链表插入
 export const enqueueUpdate = <State>(
@@ -134,13 +150,20 @@ export const processUpdateQueue = <State>(
 				}
 
 				const action = pendingUpdate.action;
-				if (action instanceof Function) {
-					// 函数,接受老值返回新
-					newState = action(baseState);
+				// if (action instanceof Function) {
+				// 	// 函数,接受老值返回新
+				// 	newState = action(baseState);
+				// } else {
+				// 	// 就是直接值，直接赋值
+				// 	newState = action;
+				// }
+
+				if (pending.hasEagerState) {
+					newState = pending.eagerState;
 				} else {
-					// 就是直接值，直接赋值
-					newState = action;
+					newState = basicStateReducer(baseState, action);
 				}
+
 				pending = pending.next;
 			}
 		} while (pending !== first && num++ < 10);

@@ -2,7 +2,7 @@
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-07 11:40:42
  * @LastEditors: error: error: git config user.name & please set dead value or install git && error: git config user.email & please set dead value or install git & please set dead value or install git
- * @LastEditTime: 2024-09-23 17:36:44
+ * @LastEditTime: 2024-10-08 10:48:51
  * @FilePath: \react\packages\react-reconciler\src\workTags.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -16,6 +16,7 @@ export type WorkTag =
 	| typeof Fragment
 	| typeof ContextProvider
 	| typeof SuspenseComponent
+	| typeof MemoComponent
 	| typeof OffscreenComponent;
 
 export const FunctionComponent = 0;
@@ -27,3 +28,4 @@ export const ContextProvider = 8;
 
 export const SuspenseComponent = 13;
 export const OffscreenComponent = 14;
+export const MemoComponent = 15;

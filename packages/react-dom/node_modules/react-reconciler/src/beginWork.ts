@@ -1,8 +1,8 @@
 /*
  * @Author: fumi 330696896@qq.com
  * @Date: 2024-08-07 14:37:57
- * @LastEditors: fumi 330696896@qq.com
- * @LastEditTime: 2024-09-29 15:48:21
+ * @LastEditors: error: error: git config user.name & please set dead value or install git && error: git config user.email & please set dead value or install git & please set dead value or install git
+ * @LastEditTime: 2024-10-08 11:04:54
  * @FilePath: \react\packages\react-reconciler\src\beginWork.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -23,7 +23,8 @@ import {
 	Fragment,
 	ContextProvider,
 	SuspenseComponent,
-	OffscreenComponent
+	OffscreenComponent,
+	MemoComponent
 } from './workTags';
 import {
 	cloneChildFibers,
@@ -34,6 +35,7 @@ import { bailoutHook, renderWithHooks } from './fiberHooks';
 import { includeSomeLanes, Lane, NoLanes } from './fiberLanes';
 import { ChildDeletion, Placement, Ref } from './fiberFlags';
 import { pushProvider } from './fiberContext';
+import { shallowEqual } from 'shared/shallowEquals';
 
 // 是否命中bailout策略，false代表命中
 let didReceiveUpdate = false;
@@ -48,7 +50,7 @@ export function markWipReceivedUpdate() {
 
 export const beginWork = (fiberNode: FiberNode, renderLane: Lane) => {
 	// bailout 策略
-	didReceiveUpdate = false
+	didReceiveUpdate = false;
 	const current = fiberNode.alternate;
 	if (current !== null) {
 		const oldProps = current.memoizedProps;
@@ -93,7 +95,7 @@ export const beginWork = (fiberNode: FiberNode, renderLane: Lane) => {
 			return updateHostComponent(fiberNode, renderLane);
 
 		case FunctionComponent:
-			return updateFunctionComponent(fiberNode, renderLane);
+			return updateFunctionComponent(fiberNode, fiberNode.type, renderLane);
 
 		case Fragment:
 			return updateFragment(fiberNode);
@@ -106,6 +108,8 @@ export const beginWork = (fiberNode: FiberNode, renderLane: Lane) => {
 
 		case OffscreenComponent:
 			return updateOffscreentComponent(fiberNode);
+		case MemoComponent:
+			return updateMemotComponent(fiberNode, renderLane);
 
 		case HostText: //<div>xx</div>   div下面没有子节点
 			return null;
@@ -118,6 +122,30 @@ export const beginWork = (fiberNode: FiberNode, renderLane: Lane) => {
 
 	return fiberNode;
 };
+
+function updateMemotComponent(wip: FiberNode, renderLane: Lane) {
+	// bailout四要素
+	// props浅比较
+	const current = wip.alternate;
+	const nextProps = wip.pendingProps;
+	const Component = wip.type.type;
+	if (current !== null) {
+		const prevProps = current.memoizedProps;
+		// 浅比较props
+		if (shallowEqual(prevProps, nextProps) && current.ref === wip.ref) {
+			didReceiveUpdate = false; //命中bailout
+			wip.pendingProps = prevProps;
+
+			// state context 命中
+			if (!checkScheduledUpdateOrContext(current, renderLane)) {
+				wip.lanes = current.lanes;
+				return bailouOnAlreadyFinishedWork(wip, renderLane);
+			}
+		}
+	}
+
+	return updateFunctionComponent(wip, Component, renderLane);
+}
 
 function bailouOnAlreadyFinishedWork(wip: FiberNode, renderLane: Lane) {
 	if (!includeSomeLanes(wip.childLanes, renderLane)) {
@@ -329,13 +357,17 @@ function updateFragment(wip: FiberNode) {
 }
 
 // 函数组件的child，是执行后的结果
-function updateFunctionComponent(wip: FiberNode, renderLane: Lane) {
-	const nextChildren = renderWithHooks(wip, renderLane);
+function updateFunctionComponent(
+	wip: FiberNode,
+	Component: FiberNode['type'],
+	renderLane: Lane
+) {
+	const nextChildren = renderWithHooks(wip, Component, renderLane);
 
 	// 这里需要在fiberhooks中判断state是否更改
 	const current = wip.alternate;
 	if (current !== null && !didReceiveUpdate) {
-		bailoutHook(wip,renderLane)
+		bailoutHook(wip, renderLane);
 		return bailouOnAlreadyFinishedWork(wip, renderLane);
 	}
 
